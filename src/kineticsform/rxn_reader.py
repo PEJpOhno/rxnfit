@@ -1,0 +1,475 @@
+# Copyright (c) 2025 Mitsuru Ohno
+# Use of this source code is governed by a BSD-3-style
+# license that can be found in the LICENSE file.
+
+# 08/30/2025, M. Ohno
+
+import csv
+from collections import defaultdict
+
+import numpy as np
+
+import sympy
+from sympy import symbols, Function, Eq, Derivative, lambdify
+from sympy.parsing.sympy_parser import parse_expr
+
+
+def get_reactions(file_path, encoding=None):
+    """Imports elementary reaction formulas from a CSV file into a Python list.
+
+    The reaction formulas are written by reaction SMILES style.
+    The CSV file is expected to have a header row and each subsequent row
+    should represent a reaction with columns for Reaction ID, rate constant (k),
+    followed by pairs of columns for reactant coefficient and reactant name,
+    separated by ">", then conditions, separated by ">", and finally pairs of
+    columns for product coefficient and product name. The "+" symbols in the CSV are ignored.
+
+    Args:
+        file_path (str): The path to the CSV file containing the reaction formulas.
+        encoding (str, optional): The encoding of the CSV file. Defaults to 'utf-8' if None.
+
+    Returns:
+        list: A list of lists, where each inner list represents a reaction and contains:
+            - A list with the reaction ID and rate constant (as a float).
+            - A list of lists, where each inner list contains the coefficient (as a string)
+              and the name (as a string) of a reactant.
+            - A list of lists, where each inner list contains the coefficient (as a string)
+              and the name (as a string) of a product.
+            - A list of strings representing the conditions.
+    """
+    if encoding == None:
+        encoding = 'utf-8'
+    reaction_equations = []  # 素反応を格納するリスト
+
+    with open(file_path, mode='r', encoding=encoding) as file:
+        reader = csv.reader(file)
+        next(reader)  # ヘッダ行をスキップ
+
+        for row in reader:
+            # "+"を除外
+            filtered_row = [e for e in row if e != "+" and e != "."]
+
+            # すべての要素を文字列に変換
+            filtered_row = [str(e) for e in filtered_row]
+
+            # 分子の係数の"1"を""に置換
+            filtered_row = [
+                e if index < 2 or e != "1" else ""
+                for index, e in enumerate(filtered_row)
+            ]
+
+            # 最初と二番目の">"の位置を取得
+            i = filtered_row.index(">") if ">" in filtered_row else -1
+            j = (
+                filtered_row.index(">", i + 1)
+                if i != -1 and ">" in filtered_row[i + 1:]
+                else -1
+            )
+
+            # リストを作成
+            if len(filtered_row) > 1:
+                # reaction IDおよびkのリスト
+                ID_k = filtered_row[:2]
+                ID_k[1] = float(ID_k[1])
+
+                # reactantの分子数と分子のリスト
+                reactants = (
+                    [filtered_row[k:k + 2] for k in range(2, i, 2)]
+                    if i > 0
+                    else []
+                )
+                # 左づめ表記なっていない場合に対応
+                reactants = [sublist for sublist in reactants
+                            if any(sublist) and
+                            not any('>' in element for element in sublist)]
+
+                # 反応条件のリスト
+                conditions = (
+                    [filtered_row[k] for k in range(i + 1, j)]
+                )
+
+                # productの分子数と分子のリスト
+                products = (
+                    [filtered_row[k:k + 2] for k in range(j + 1, len(filtered_row), 2)]
+                    if j > 0
+                    else []
+                )
+                # 反応条件の有無により行の長さが変わるため、全ての要素が空の化学種を削除
+                products = [sublist for sublist in products if any(sublist)]
+
+                # 反応式をネストしたリストとして構築
+                reaction_equations.append([ID_k, reactants, products, conditions])
+
+    return reaction_equations
+
+
+def get_unique_species(reaction_equations):
+    """Extract unique chemical species from elementary reactions.
+
+    Args:
+        reaction_equations (list): A list of lists representing elementary reactions.
+
+    Returns:
+        list: A list of unique chemical species sorted by their appearance order.
+    """
+    species = []
+    flatten_species = []
+    for item in reaction_equations:
+        species.append([e[1] for e in item[1]])  # the list of the reactants
+        species.append([e[1] for e in item[2]])  # the list of the products
+    [flatten_species.extend(e) for e in species]  # flatten netsted list
+    unique_species = sorted(set(flatten_species),
+                            key=flatten_species.index)
+    return list(unique_species)
+
+
+def to_chempy_style(reaction):
+    """Converts a reaction equation list to a ChemPy-style dictionary representation.
+
+    Args:
+        reaction (list): A list representing a reaction equation in the format
+                         [['ID', rate_constant], [[coeff, reactant1], ...], [[coeff, product1], ...]].
+
+    Returns:
+        list: A list containing the reaction ID and rate constant, followed by two dictionaries
+              representing the reactants and products with their coefficients.
+    """
+    e_dict = [reaction[0],
+              dict(
+                  map(
+                      lambda x: (x[1], float(x[0]) if x[0] != "" else 1), reaction[1]
+                  )),
+              dict(
+                  map(
+                      lambda x: (x[1], float(x[0]) if x[0] != "" else 1), reaction[2]
+                  ))]
+    return e_dict
+
+
+def reactant_consumption(reaction_equation):
+    """Generate rate law equations for reactant consumption.
+    The equation and the coefficient were determined as follows,
+    when aA + bB -> cC + dD
+    -d[A]/dt = k * A^a * B^b
+    -(1/a)d[A]/dt = -(1/b)d[B]/dt = (1/c)d[C]/dt = (1/d)d[D]/dt
+    That is,
+    -d[A]/dt = -(a/b)d[B]/dt = (a/c)d[C]/dt = (a/d)d[D]/dt
+
+    Args:
+        reaction_equation (list): A list representing a reaction equation in the format
+                                  [['ID', rate_constant], [[coeff, reactant1], ...], [[coeff, product1], ...]].
+
+    Returns:
+        list: reaction_equation (list) + RHS of rate law equations + coefficient of rate law equations
+    """
+    reactant_eq = reaction_equation[:]
+    rate_constant = 'k' + reaction_equation[0][0]
+    terms = [rate_constant, ]
+    for e in reaction_equation[1]:
+        if e[0] != '':
+            term = e[1] + '(t)' + '**' + e[0]
+        else:
+            term = e[1] + '(t)'
+        terms.append(term)  # the list of the reactants
+    reactant_equation = "*".join(terms)
+    coef_kinetics = [reactant_equation, ]
+
+    standard_val = reaction_equation[1][0][0]
+    for e in reaction_equation[1:3]:
+        coef = [e2[0] + '/' + standard_val for e2 in e]
+        coef = [e[:-1] if e.endswith('/') else e for e in coef]
+        coef = ['1' + e if e.startswith('/') else e for e in coef]
+        coef_kinetics.append(coef)
+
+    reactant_eq.append(coef_kinetics)
+    return reactant_eq
+
+
+def generate_ode(reaction):
+    """Used in the function 'generate_sys_ode'
+    
+    Args:
+        reaction (list): A list representing a reaction equation.
+        
+    Returns:
+        defaultdict: A dictionary mapping species names to their ODE expressions.
+    """
+    dict_species = defaultdict(str)
+    LHSs = []  # 常微分方程式左辺
+    RHSs = []  # 常微分方程式右辺
+    # equations = [] # 式全体 : 隠し機能
+
+    # reaction[4]が存在するかチェック
+    if len(reaction) < 5:
+        print(f"Warning: reaction format is incomplete: {reaction}")
+        return dict_species
+
+    for i, half_reaction in enumerate(reaction[1:3]):
+        for j, species in enumerate(half_reaction):
+            LHS_ODE = str(species[1])  # for human interface, str('d'+species[1]+'/dt')
+            if i == 0:  # reactants
+                RHS_ODE = str('-' + reaction[4][1][j] + '*' + reaction[4][0])
+            else:  # i==1, products
+                RHS_ODE = str('+' + reaction[4][2][j] + '*' + reaction[4][0])
+            RHS_ODE = RHS_ODE.replace("-*", "-").replace("+*", "+")
+            LHSs.append(LHS_ODE)
+            RHSs.append(RHS_ODE)
+            # equation = LHS_ODE + ' = ' + RHS_ODE
+            # equation = equation.replace("= +", "= ")
+            # equations.append(equation)
+
+    for k, v in zip(LHSs, RHSs):
+        dict_species[k] += v
+    return dict_species
+
+
+def generate_sys_ode(reactant_eq):
+    """Generate system of ODEs from reactant equations.
+    
+    Args:
+        reactant_eq (list): A list of reactant equations.
+        
+    Returns:
+        dict: A dictionary containing the system of ODEs.
+    """
+    sys_odes_list = []
+    for reaction in reactant_eq:
+        sys_odes_list.append(generate_ode(reaction))
+        sys_odes_dict = defaultdict(str)
+        for d in sys_odes_list:
+            for key, value in d.items():
+                sys_odes_dict[key] += value
+        sys_odes_dict = {
+            key: value.lstrip('+') for key, value in sys_odes_dict.items()
+        }
+    return dict(sys_odes_dict)
+
+
+def rate_constants(reactant_eq):
+    """Extract rate constants from reactant equations.
+    
+    Args:
+        reactant_eq (list): A list of reactant equations.
+        
+    Returns:
+        dict: A dictionary mapping rate constant keys to their values.
+    """
+    rate_consts_dict = {}
+    for e in reactant_eq:
+        key = 'k' + e[0][0]
+        try:
+            # Attempt to convert to float
+            value = float(e[0][1])
+        except ValueError:
+            # If conversion fails, keep as string
+            value = e[0][1]
+        rate_consts_dict[key] = value
+    return rate_consts_dict
+
+
+class RxnToODE:
+    """A class for converting reaction equations from CSV files to ODE systems.
+    
+    This class reads chemical reaction data from CSV files and converts them
+    into systems of ordinary differential equations using SymPy.
+    
+    Attributes:
+        file_path (str): The path to the CSV file containing reaction data.
+        reactant_eq (list): A list of reactant equations generated from the file.
+        t (Symbol): SymPy symbol for time variable.
+        function_names (list): List of chemical species names extracted from reactions.
+        functions_dict (dict): Dictionary mapping species names to SymPy functions.
+        rate_consts_dict (dict): Dictionary of rate constants extracted from reactions.
+        sympy_symbol_dict (dict): Dictionary of SymPy symbols and functions.
+        sys_odes_dict (dict): Dictionary of ODE expressions.
+    """
+    
+    def __init__(self, file_path, encoding=None):
+        """Initialize the RxnToODE class.
+        
+        Args:
+            file_path (str): The path to the CSV file containing reaction data.
+            encoding (str, optional): The encoding of the CSV file. Defaults to 'utf-8' if None.
+        """
+        self.file_path = file_path
+        self.encoding = encoding if encoding else 'utf-8'
+        
+        # ファイルから反応式を読み込み、reactant_eqを生成
+        reaction_equations = get_reactions(file_path, self.encoding)
+        self.reactant_eq = [reactant_consumption(rxn) for rxn in reaction_equations]
+        
+        self.t = symbols('t')
+        self.function_names = get_unique_species(reaction_equations)
+        self.functions_dict = dict(zip(self.function_names,
+                                      [Function(name) for name in self.function_names]))
+        self.rate_consts_dict = rate_constants(self.reactant_eq)
+        
+        # 文字列内で使用するシンボル、関数、定数を統合
+        self.sympy_symbol_dict = {'t': self.t, 'Derivative': Derivative}
+        self.sympy_symbol_dict.update(self.rate_consts_dict)
+        self.sympy_symbol_dict.update(self.functions_dict)
+        
+        # 方程式を構築
+        self.sys_odes_dict = generate_sys_ode(self.reactant_eq)
+    
+    def get_equations(self):
+        """Generate the system of SymPy equations.
+        
+        Returns:
+            list: List of SymPy equations representing the ODE system.
+        """
+        system_of_equations = []
+        for key in self.sys_odes_dict.keys():
+            rhs_expr = parse_expr(self.sys_odes_dict[key], local_dict=self.sympy_symbol_dict)
+            lhs = Derivative(self.functions_dict[key](self.t), self.t)
+            eq = Eq(lhs, rhs_expr)
+            system_of_equations.append(eq)
+        return system_of_equations
+    
+    def create_ode_system(self):
+        """Create ODE system expressions for symbolic manipulation.
+        
+        Returns:
+            dict: Dictionary mapping species names to ODE expressions.
+        """
+        ode_expressions = {}
+        for key in self.sys_odes_dict.keys():
+            rhs_expr = parse_expr(self.sys_odes_dict[key], local_dict=self.sympy_symbol_dict)
+            ode_expressions[key] = rhs_expr
+        return ode_expressions
+    
+    
+class RxnIVPsolv(RxnToODE):
+    """A class for solving ODE systems using scipy.solve_ivp.
+    
+    This class extends RxnToODE to provide functionality for numerical
+    integration of the ODE system. It automatically generates numerical
+    functions from symbolic ODE expressions that can be used with
+    scipy.solve_ivp for time integration.
+    
+    Attributes:
+        Inherits all attributes from RxnToODE class.
+        
+    Methods:
+        create_ode_system(): Creates numerical ODE functions for integration.
+        get_ode_system(): Returns complete ODE system for scipy.solve_ivp.
+        debug_ode_system(): Provides detailed debug information.
+    """
+    
+    def __init__(self, file_path, encoding=None):
+        """Initialize the RxnIVPsolv class.
+        
+        Args:
+            file_path (str): The path to the CSV file containing reaction data.
+            encoding (str, optional): The encoding of the CSV file. Defaults to 'utf-8' if None.
+        """
+        # 親クラスの初期化を呼び出し
+        super().__init__(file_path, encoding)
+    
+    def create_ode_system(self):
+        """Create ODE system functions for numerical integration.
+        
+        Returns:
+            dict: Dictionary mapping species names to ODE functions.
+        """
+        ode_functions = {}
+        
+        # 引数の順序を明示的に定義（文字列として）
+        args = ['t'] + self.function_names
+        
+        for key in self.sys_odes_dict.keys():
+            rhs_expr = parse_expr(self.sys_odes_dict[key], local_dict=self.sympy_symbol_dict)
+
+            # 式内の関数呼び出しを変数に置換
+            # 例: AcOEt(t) -> AcOEt, OHa1(t) -> OHa1
+            for func_name in self.function_names:
+                func_sym = Function(func_name)
+                rhs_expr = rhs_expr.subs(func_sym(self.t), symbols(func_name))
+
+            # 関数を数値計算用に変換（引数順序を明示的に指定）
+            try:
+                # 引数順序を確実に制御
+                ode_functions[key] = lambdify(args, rhs_expr, modules='numpy')
+                print(f"Successfully created function for {key} with args: {args}")
+            except Exception as e:
+                print(f"Warning: Failed to create lambdify function for {key}: {e}")
+                print(f"Expression: {rhs_expr}")
+                print(f"Arguments: {args}")
+                # フォールバック: より安全な方法でlambdifyを作成
+                try:
+                    ode_functions[key] = lambdify(args, rhs_expr, modules=['numpy', 'math'])
+                    print(f"Fallback successful for {key}")
+                except Exception as e2:
+                    print(f"Fallback also failed for {key}: {e2}")
+                    # 最後の手段: 引数を個別に指定
+                    ode_functions[key] = lambdify((['t'] + self.function_names), rhs_expr, modules='numpy')
+                    print(f"Individual args method successful for {key}")
+
+        return ode_functions
+    
+    def get_ode_system(self):
+        """Get ODE system objects for scipy.solve_ivp integration.
+        
+        Returns:
+            tuple: A tuple containing:
+                - system_of_equations: List of SymPy equations
+                - sympy_symbol_dict: Dictionary of SymPy symbols
+                - ode_system: ODE system functions
+                - function_names: List of function names
+                - rate_consts_dict: Dictionary of rate constants
+        """
+        system_of_equations = self.get_equations()
+        ode_system = self.create_ode_system()
+        
+        return (system_of_equations, self.sympy_symbol_dict, 
+                ode_system, self.function_names, self.rate_consts_dict)
+    
+    def debug_ode_system(self):
+        """Debug information for ODE system.
+        
+        Returns:
+            dict: Debug information about the ODE system.
+        """
+        debug_info = {
+            'function_names': self.function_names,
+            'function_names_order': list(enumerate(self.function_names)),
+            'rate_constants': self.rate_consts_dict,
+            'ode_expressions': self.sys_odes_dict,
+            'lambdify_args': ['t'] + self.function_names,
+            'total_species': len(self.function_names)
+        }
+        
+        # 各ODE関数の引数情報を確認
+        ode_functions = self.create_ode_system()
+        debug_info['ode_functions_info'] = {}
+        
+        for key, func in ode_functions.items():
+            try:
+                # 関数の引数情報を取得（可能な場合）
+                debug_info['ode_functions_info'][key] = {
+                    'function': func,
+                    'expression': self.sys_odes_dict[key],
+                    'function_type': str(type(func)),
+                    'function_repr': repr(func)
+                }
+                
+                # 関数の引数数を確認（可能な場合）
+                try:
+                    # テスト用の引数を作成
+                    test_args = [0.0] + [1.0] * len(self.function_names)
+                    test_result = func(*test_args)
+                    debug_info['ode_functions_info'][key]['test_successful'] = True
+                    debug_info['ode_functions_info'][key]['test_result'] = test_result
+                except Exception as test_e:
+                    debug_info['ode_functions_info'][key]['test_successful'] = False
+                    debug_info['ode_functions_info'][key]['test_error'] = str(test_e)
+                    
+            except Exception as e:
+                debug_info['ode_functions_info'][key] = {
+                    'error': str(e),
+                    'expression': self.sys_odes_dict[key]
+                }
+        
+        return debug_info
+
+
