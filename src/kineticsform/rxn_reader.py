@@ -10,7 +10,7 @@ from collections import defaultdict
 import numpy as np
 
 import sympy
-from sympy import symbols, Function, Eq, Derivative, lambdify
+from sympy import Symbol, symbols, Function, Eq, Derivative, lambdify
 from sympy.parsing.sympy_parser import parse_expr
 
 
@@ -306,6 +306,9 @@ class RxnToODE:
         self.functions_dict = dict(zip(self.function_names,
                                       [Function(name) for name in self.function_names]))
         self.rate_consts_dict = rate_constants(self.reactant_eq)
+        self.rate_consts_dict = {
+            key: val if isinstance(val, float) else Symbol(val)
+            for key, val in self.rate_consts_dict.items()} # added 08/31/2025
         
         # 文字列内で使用するシンボル、関数、定数を統合
         self.sympy_symbol_dict = {'t': self.t, 'Derivative': Derivative}
