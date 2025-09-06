@@ -7,7 +7,7 @@
 from .rxn_reader import RxnToODE
 from sympy import Function, symbols, parse_expr, lambdify
 
-class RxnIVPsolv(RxnToODE):
+class RxnODEbuild(RxnToODE):
     """A class for solving ODE systems using scipy.solve_ivp.
     
     This class extends RxnToODE to provide functionality for numerical
@@ -25,7 +25,7 @@ class RxnIVPsolv(RxnToODE):
     """
     
     def __init__(self, file_path, encoding=None):
-        """Initialize the RxnIVPsolv class.
+        """Initialize the RxnODEbuild class.
         
         Args:
             file_path (str): The path to the CSV file containing reaction data.

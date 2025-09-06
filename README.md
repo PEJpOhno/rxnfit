@@ -1,6 +1,6 @@
 
 ## 1. Overviews  
-"kineticsform" is a Python module to set up theoretical reaction kinetics equations from reaction formulas and the rate constats provided as csv file.  
+"rxnfit" is a Python module to set up theoretical reaction kinetics equations from reaction formulas and the rate constats provided as csv file.  
 
 ## 2. Current version and requirements  
 - current version = 0.0.1   
@@ -14,7 +14,7 @@ Released under the BSD-3 license, license that can be found in the LICENSE file.
 
 ## 4. Installation  
 Download the directry "src" to a suitable directry on your computer.  
-For quick start, put the sample script "kineticsform_sample_script.ipynb"  on the same directry described above. In this case, Jupyter Notebook is required.  
+For quick start, put the sample script "rxnfit_sample_script.ipynb"  on the same directry described above. In this case, Jupyter Notebook is required.  
 
 ## 5. Usage  
 ### 5-1. Prepare csv file 
@@ -32,10 +32,10 @@ example of a csv format
     2,1.4,,AcOiPr,,OHa1,>,>,,AcOa1,,iPrOH  
     3,0.031,,EGOAc2,2,OHa1,>,>,2,AcOa1,,EG  
 
-### 5-2. Run kineticsform   
-1. Import kineticsform.  
+### 5-2. Run rxnfit   
+1. Import rxnfit.  
 ```py
-from src import kineticsform as kf
+from src import rxnfit as kf
 ```
 2. Read the csv file as Pandas DataFrame.  
 

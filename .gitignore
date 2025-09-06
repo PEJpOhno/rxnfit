@@ -1,6 +1,6 @@
-src/kineticsform/__pycache__/
+src/rxnfit/__pycache__/
 .ipynb_checkpoints/
 .DS_Store
 src/.DS_Store
-src/kineticsform/.DS_Store
-kineticsform_sample_script2.ipynb
+src/rxnfit/.DS_Store
+rxnfit_sample_script2.ipynb
