@@ -54,4 +54,23 @@ Configuration of the retuned value
 
 ## References
 1) 桜田一郎; 坂口康義; 大村恭弘. [11] 数種の水溶性高分子酢酸エステルの加水分解速度. 高分子化學, 1970, 27.297: 89-96.  https://doi.org/10.1295/koron1944.27.89
-2) 永井俊. 物理化学実験 「酢酸エステルの加水分解速度測定」 の問題点と改良法. 日本医科大学基礎科学紀要= The Bulletin of liberal arts & sciences, Nippon Medical School/日本医科大学基礎科学紀要編集委員会 編, 2015, 44: 1-24.  https://www.nms.ac.jp/library/college/pdf/kenkyujoho/katsudo/kiyou/no44/44thebulletin_takashi_nagai.pdf
+2) 永井俊. 物理化学実験 「酢酸エステルの加水分解速度測定」 の問題点と改良法. 日本医科大学基礎科学紀要= The Bulletin of liberal arts & sciences, Nippon Medical School/日本医科大学基礎科学紀要編集委員会 編, 2015, 44: 1-24.  https://www.nms.ac.jp/library/college/pdf/kenkyujoho/katsudo/kiyou/no44/44thebulletin_takashi_nagai.pdf  
+
+## THIRD-PARTY LICENSES
+
+This software includes the following third-party libraries:
+
+---
+
+Library: Python
+Website: https://www.python.org/
+License: Python Software Foundation License Version 2
+Copyright © 2001–2025 Python Software Foundation
+
+---
+
+Library: NumPy
+Website: https://numpy.org/
+License: BSD 3-Clause License
+Copyright (c) 2005–2025, NumPy Developers
+

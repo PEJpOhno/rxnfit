@@ -14,6 +14,17 @@ from scipy.integrate import solve_ivp
 from src.rxnfit.build_ode import RxnODEbuild
 
 
+# ODEソルバーへのパラメータ指定  
+@dataclass
+class SolverConfig:
+    rxn_ivp: RxnODEbuild
+    y0: list              # 初期濃度（必須）
+    t_span: tuple         # 時間範囲（必須）
+    t_eval: Optional[np.ndarray] = field(default=None)  # 任意
+    method: str = "RK45"  # 任意
+    rtol: float = 1e-6    # 任意
+
+
 # 作成した微分方程式に関する情報を表示
 def get_ode_info(rxn_ivp, debug_info=False):    
     print(f"number of species: {len(rxn_ivp.function_names)}")
@@ -28,20 +39,10 @@ def get_ode_info(rxn_ivp, debug_info=False):
         print(f"system of ODE: {debug_info['ode_expressions']}")
 
 
-@dataclass
-class SolverConfig:
-    rxn_ivp: RxnODEbuild
-    y0: list              # 初期濃度（必須）
-    t_span: tuple         # 時間範囲（必須）
-    t_eval: Optional[np.ndarray] = field(default=None)  # 任意
-    method: str = "RK45"  # 任意
-    rtol: float = 1e-6    # 任意
-
 
 def solve_system(config: SolverConfig):
 
     # 数値積分に必要なオブジェクトを取得
-    #print("\n=== ODEシステムの取得 ===")
     ode_construct = rxn_ivp_build.get_ode_system()
     (system_of_equations, sympy_symbol_dict, 
      ode_system, function_names, rate_consts_dict) = ode_construct
@@ -63,7 +64,6 @@ def solve_system(config: SolverConfig):
         return rhs_odesys
     
     # 数値積分を実行
-    #print("\n=== 数値積分の実行 ===")
     solution = None
     try:
         solution = solve_ivp(
