@@ -4,24 +4,26 @@
 
 # 08/30/2025, M. Ohno
 
-from .rxn_reader import RxnToODE
 from sympy import Function, symbols, parse_expr, lambdify
 
+from .rxn_reader import RxnToODE
+
+
 class RxnODEbuild(RxnToODE):
-    """A class for solving ODE systems using scipy.solve_ivp.
+    """A class for building ODE systems from reaction definitions.
     
-    This class extends RxnToODE to provide functionality for numerical
-    integration of the ODE system. It automatically generates numerical
-    functions from symbolic ODE expressions that can be used with
-    scipy.solve_ivp for time integration.
+    This class extends RxnToODE to construct symbolic ODE expressions and
+    generate numerical functions that can be used by external solvers
+    (e.g., scipy.solve_ivp) for time integration.
     
     Attributes:
         Inherits all attributes from RxnToODE class.
         
     Methods:
         create_ode_system(): Creates numerical ODE functions for integration.
-        get_ode_system(): Returns complete ODE system for scipy.solve_ivp.
+        get_ode_system(): Returns complete ODE system for numerical solvers.
         debug_ode_system(): Provides detailed debug information.
+        get_ode_info(debug_info=False): Prints summary and optional debug info.
     """
     
     def __init__(self, file_path, encoding=None):
@@ -139,5 +141,20 @@ class RxnODEbuild(RxnToODE):
                 }
         
         return debug_info
+
+
+    # 作成した微分方程式に関する情報を表示
+    def get_ode_info(self, debug_info: bool = False):
+        print(f"number of species: {len(self.function_names)}")
+        print(f"unique species: {self.function_names}")
+        print(f"rate constant: {self.rate_consts_dict}")
+
+        if debug_info is True:
+            # デバッグ情報を確認
+            print("\n=== debug info ===")
+            dbg = self.debug_ode_system()
+            print(f"order of args: {dbg['lambdify_args']}")
+            print(f"system of ODE: {dbg['ode_expressions']}")
+
 
 

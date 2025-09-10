@@ -7,10 +7,7 @@
 import csv
 from collections import defaultdict
 
-import numpy as np
-
-import sympy
-from sympy import Symbol, symbols, Function, Eq, Derivative, lambdify
+from sympy import Symbol, symbols, Function, Eq, Derivative
 from sympy.parsing.sympy_parser import parse_expr
 
 
@@ -37,7 +34,7 @@ def get_reactions(file_path, encoding=None):
               and the name (as a string) of a product.
             - A list of strings representing the conditions.
     """
-    if encoding == None:
+    if encoding is None:
         encoding = 'utf-8'
     reaction_equations = []  # 素反応を格納するリスト
 
@@ -120,7 +117,8 @@ def get_unique_species(reaction_equations):
     for item in reaction_equations:
         species.append([e[1] for e in item[1]])  # the list of the reactants
         species.append([e[1] for e in item[2]])  # the list of the products
-    [flatten_species.extend(e) for e in species]  # flatten netsted list
+    for elements in species:
+        flatten_species.extend(elements)
     unique_species = sorted(set(flatten_species),
                             key=flatten_species.index)
     return list(unique_species)
@@ -343,5 +341,4 @@ class RxnToODE:
             rhs_expr = parse_expr(self.sys_odes_dict[key], local_dict=self.sympy_symbol_dict)
             ode_expressions[key] = rhs_expr
         return ode_expressions
-    
     
