@@ -9,7 +9,7 @@
 - pandas >= 1.2.4  
 
 ## 3. Copyright and license  
-Copyright (c) 2023 Mitsuru Ohno  
+Copyright (c) 2025 Mitsuru Ohno  
 Released under the BSD-3 license, license that can be found in the LICENSE file.  
 
 ## 4. Installation  
@@ -32,24 +32,17 @@ example of a csv format
     2,1.4,,AcOiPr,,OHa1,>,>,,AcOa1,,iPrOH  
     3,0.031,,EGOAc2,2,OHa1,>,>,2,AcOa1,,EG  
 
-### 5-2. Run rxnfit   
-1. Import rxnfit.  
-```py
-from src import rxnfit as kf
-```
-2. Read the csv file as Pandas DataFrame.  
+## Modules and classes   
 
-3. Run the the function "react2kinetics". The argument of the function is the name of the DataFrame.  
-```py
-kf.react2kinetic(df)
-```
-If the function run successfully, the number of the unique chemical species, the unique chemidcal species and the kinetic equations as text form, and some list type return value are returned.  
+| module | class | function |
+|---|---|---|
+| rxn_reader.py | RxnToODE | Generate differential-type rate equations as strings from reaction equations in CSV format. Then, create ODE system expressions for symbolic manipulation. |
+| build_ode.py | RxnODEbuild | Convert symbolic  differential equations (ODEs; sympy) to numerical one (scipy). |
+ solve_ode.py | solves numerical ODEs and plot the result. |
 
-Configuration of the retuned value  
-[0]: list of the unique chemical species  
-[1]: list of the left-hand side of the differential equation  
-[2]: list of the pair of the named rate constant and its value  
-[3]: reaction kinetics equations as text form
+
+
+
 
 
 ## References
