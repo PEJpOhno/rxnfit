@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rxnfit"
+dynamic = ["version"]
+authors = [
+  { name="Mitsuru Ohno", email="pejpohn@gmail.com" },
+]
+description = "set up theoretical reaction kinetics equations"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent", 
+    "License :: OSI Approved :: BSD License"
+]
+license = "BSD-3-Clause"
+license-files = ["LICEN[CS]E*"]
+
+dependencies = [
+    "numpy >= 1.26.0", 
+    "pandas >= 2.2.0", 
+    "scipy >= 1.12.0", 
+    "sympy >= 1.12",  
+    "matplotlib >= 3.8.0"
+]
+
+[tool.hatch.version]
+path = "src/rxnfit/_version.py"
+
+[project.urls]
+Homepage = "https://github.com/PEJpOhno/rxnfit.git"
+Issues = "https://github.com/PEJpOhno/rxnfit/issues"
