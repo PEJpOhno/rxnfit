@@ -4,7 +4,8 @@
 
 # 08/30/2025, M. Ohno
 
-from sympy import Function, symbols, parse_expr, lambdify
+from sympy import Function, Symbol, symbols, parse_expr, lambdify
+import inspect
 
 from .rxn_reader import RxnToODE
 
@@ -30,8 +31,10 @@ class RxnODEbuild(RxnToODE):
         """Initialize the RxnODEbuild class.
         
         Args:
-            file_path (str): The path to the CSV file containing reaction data.
-            encoding (str, optional): The encoding of the CSV file. Defaults to 'utf-8' if None.
+            file_path (str): The path to the CSV file containing reaction
+                data.
+            encoding (str, optional): The encoding of the CSV file.
+                Defaults to 'utf-8' if None.
         """
         # 親クラスの初期化を呼び出し
         super().__init__(file_path, encoding)
@@ -48,7 +51,10 @@ class RxnODEbuild(RxnToODE):
         args = ['t'] + self.function_names
         
         for key in self.sys_odes_dict.keys():
-            rhs_expr = parse_expr(self.sys_odes_dict[key], local_dict=self.sympy_symbol_dict)
+            rhs_expr = parse_expr(
+                self.sys_odes_dict[key],
+                local_dict=self.sympy_symbol_dict
+            )
 
             # 式内の関数呼び出しを変数に置換
             # 例: AcOEt(t) -> AcOEt, OHa1(t) -> OHa1
@@ -58,25 +64,71 @@ class RxnODEbuild(RxnToODE):
 
             # 関数を数値計算用に変換（引数順序を明示的に指定）
             try:
-                # 引数順序を確実に制御
-                ode_functions[key] = lambdify(args, rhs_expr, modules='numpy')
-                print(f"Successfully created function for {key} with args: {args}")
+                ode_functions[key] = lambdify(
+                    args, rhs_expr, modules='numpy'
+                )
+                print(f"Successfully created function for {key} "
+                      f"with args: {args}")
             except Exception as e:
-                print(f"Warning: Failed to create lambdify function for {key}: {e}")
-                print(f"Expression: {rhs_expr}")
-                print(f"Arguments: {args}")
-                # フォールバック: より安全な方法でlambdifyを作成
-                try:
-                    ode_functions[key] = lambdify(args, rhs_expr, modules=['numpy', 'math'])
-                    print(f"Fallback successful for {key}")
-                except Exception as e2:
-                    print(f"Fallback also failed for {key}: {e2}")
-                    # 最後の手段: 引数を個別に指定
-                    ode_functions[key] = lambdify((['t'] + self.function_names), rhs_expr, modules='numpy')
-                    print(f"Individual args method successful for {key}")
+                print(f"Warning: Failed to create lambdify function "
+                      f"for {key}: {e}")
 
         return ode_functions
     
+    def create_ode_system_with_rate_consts(self):
+        """Create ODE system functions with rate constants as arguments.
+
+        This method creates lambdify functions that include rate constants
+        as arguments, allowing them to be passed dynamically without
+        relying on global scope.
+        This method is used for the function 'solve_fit_model'
+
+        Returns:
+            tuple: A tuple containing:
+                - dict: Dictionary mapping species names to ODE functions.
+                  Functions accept arguments:
+                  [t] + function_names + symbolic_rate_const_keys
+                - list: List of symbolic rate constant keys in order
+        """
+        from sympy.core.symbol import Symbol as SympySymbol
+        ode_functions = {}
+
+        # シンボリックな速度定数のリスト（順序を保持）
+        symbolic_rate_const_keys = [
+            key for key, val in self.rate_consts_dict.items()
+            if isinstance(val, (Symbol, SympySymbol))
+        ]
+
+        # 引数の順序を明示的に定義（速度定数も含む）
+        args = ['t'] + self.function_names + symbolic_rate_const_keys
+
+        for key in self.sys_odes_dict.keys():
+            rhs_expr = parse_expr(
+                self.sys_odes_dict[key],
+                local_dict=self.sympy_symbol_dict
+            )
+
+            # 式内の関数呼び出しを変数に置換
+            # 例: AcOEt(t) -> AcOEt, OHa1(t) -> OHa1
+            for func_name in self.function_names:
+                func_sym = Function(func_name)
+                rhs_expr = rhs_expr.subs(
+                    func_sym(self.t), symbols(func_name)
+                )
+
+            # 関数を数値計算用に変換（引数順序を明示的に指定、
+            # 速度定数も含む）
+            try:
+                ode_functions[key] = lambdify(
+                    args, rhs_expr, modules='numpy'
+                )
+            except Exception as e:
+                print(f"Warning: Failed to create lambdify function "
+                      f"for {key}: {e}")
+                ode_functions[key] = None
+
+        return ode_functions, symbolic_rate_const_keys
+
     def get_ode_system(self):
         """Get ODE system objects for scipy.solve_ivp integration.
         
@@ -91,8 +143,10 @@ class RxnODEbuild(RxnToODE):
         system_of_equations = self.get_equations()
         ode_system = self.create_ode_system()
         
-        return (system_of_equations, self.sympy_symbol_dict, 
-                ode_system, self.function_names, self.rate_consts_dict)
+        return (
+            system_of_equations, self.sympy_symbol_dict,
+            ode_system, self.function_names, self.rate_consts_dict
+        )
     
     def debug_ode_system(self):
         """Debug information for ODE system.
@@ -128,11 +182,15 @@ class RxnODEbuild(RxnToODE):
                     # テスト用の引数を作成
                     test_args = [0.0] + [1.0] * len(self.function_names)
                     test_result = func(*test_args)
-                    debug_info['ode_functions_info'][key]['test_successful'] = True
-                    debug_info['ode_functions_info'][key]['test_result'] = test_result
+                    debug_info['ode_functions_info'][key][
+                        'test_successful'] = True
+                    debug_info['ode_functions_info'][key][
+                        'test_result'] = test_result
                 except Exception as test_e:
-                    debug_info['ode_functions_info'][key]['test_successful'] = False
-                    debug_info['ode_functions_info'][key]['test_error'] = str(test_e)
+                    debug_info['ode_functions_info'][key][
+                        'test_successful'] = False
+                    debug_info['ode_functions_info'][key][
+                        'test_error'] = str(test_e)
                     
             except Exception as e:
                 debug_info['ode_functions_info'][key] = {
@@ -142,9 +200,13 @@ class RxnODEbuild(RxnToODE):
         
         return debug_info
 
-
-    # 作成した微分方程式に関する情報を表示
     def get_ode_info(self, debug_info: bool = False):
+        """Print summary information about the ODE system.
+        
+        Args:
+            debug_info (bool, optional): If True, also print detailed debug
+                information. Defaults to False.
+        """
         print(f"number of species: {len(self.function_names)}")
         print(f"unique species: {self.function_names}")
         print(f"rate constant: {self.rate_consts_dict}")
@@ -157,4 +219,86 @@ class RxnODEbuild(RxnToODE):
             print(f"system of ODE: {dbg['ode_expressions']}")
 
 
+def create_system_rhs(ode_functions_dict, function_names,
+                      rate_const_values=None,
+                      symbolic_rate_const_keys=None):
+    """Create a function to compute the right-hand side of an ODE system.
+    
+    This function creates a closure that captures the ODE functions and
+    parameters, returning a function with the signature (t, y) required
+    by scipy.solve_ivp.
+    
+    Args:
+        ode_functions_dict (dict): Dictionary mapping species names to
+            their ODE functions.
+        function_names (list): List of chemical species names in order.
+        rate_const_values (dict, optional): Dictionary of rate constant
+            values to be passed dynamically. If provided, rate constants
+            are passed as function arguments rather than being embedded.
+        symbolic_rate_const_keys (list, optional): List of rate constant
+            keys in order. Required if rate_const_values is provided.
+
+    Returns:
+        function: A function system_rhs(t, y) that computes the right-hand
+            side of the ODE system. The function accepts time t and state
+            vector y, and returns a list of derivatives for each species.
+    """
+    # クロージャでパラメータをキャプチャ（solve_ivpは(t, y)シグネチャを要求）
+    def system_rhs(t, y):
+        """Compute the right-hand side of the ODE system.
+        
+        Args:
+            t (float): Current time.
+            y (array-like): Current state vector (concentrations).
+            
+        Returns:
+            list: List of derivatives for each species in function_names order.
+        """
+        rhs_odesys = []
+        for species_name in function_names:
+            if species_name in ode_functions_dict:
+                try:
+                    func = ode_functions_dict[species_name]
+                    if func is None:
+                        rhs_odesys.append(0.0)
+                        continue
+
+                    # 速度定数を動的に渡す場合
+                    if (rate_const_values is not None and
+                            symbolic_rate_const_keys is not None):
+                        rate_const_args = [
+                            rate_const_values[key]
+                            for key in symbolic_rate_const_keys
+                        ]
+                        args = [t] + list(y) + rate_const_args
+                        result = func(*args)
+                    else:
+                        # 速度定数が固定の場合（従来の方法）
+                        expected_args = None
+                        try:
+                            sig = inspect.signature(func)
+                            expected_args = len(sig.parameters)
+                        except Exception:
+                            try:
+                                expected_args = func.__code__.co_argcount
+                            except Exception:
+                                expected_args = None
+
+                        if expected_args is None:
+                            args = [t] + list(y)
+                        else:
+                            n_y = max(0, expected_args - 1)
+                            args = [t] + list(y[:n_y])
+
+                        result = func(*args)
+
+                    rhs_odesys.append(result)
+                except Exception as e:
+                    print(f"Error in {species_name}: {e}")
+                    rhs_odesys.append(0.0)
+            else:
+                rhs_odesys.append(0.0)
+        return rhs_odesys
+
+    return system_rhs
 

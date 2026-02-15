@@ -16,22 +16,28 @@ def get_reactions(file_path, encoding=None):
 
     The reaction formulas are written by reaction SMILES style.
     The CSV file is expected to have a header row and each subsequent row
-    should represent a reaction with columns for Reaction ID, rate constant (k),
-    followed by pairs of columns for reactant coefficient and reactant name,
-    separated by ">", then conditions, separated by ">", and finally pairs of
-    columns for product coefficient and product name. The "+" symbols in the CSV are ignored.
+    should represent a reaction with columns for Reaction ID, rate constant
+    (k), followed by pairs of columns for reactant coefficient and reactant
+    name, separated by ">", then conditions, separated by ">", and finally
+    pairs of columns for product coefficient and product name. The "+"
+    symbols in the CSV are ignored.
 
     Args:
-        file_path (str): The path to the CSV file containing the reaction formulas.
-        encoding (str, optional): The encoding of the CSV file. Defaults to 'utf-8' if None.
+        file_path (str): The path to the CSV file containing the reaction
+            formulas.
+        encoding (str, optional): The encoding of the CSV file. Defaults to
+            'utf-8' if None.
 
     Returns:
-        list: A list of lists, where each inner list represents a reaction and contains:
+        list: A list of lists, where each inner list represents a reaction
+            and contains:
             - A list with the reaction ID and rate constant (as a float).
-            - A list of lists, where each inner list contains the coefficient (as a string)
-              and the name (as a string) of a reactant.
-            - A list of lists, where each inner list contains the coefficient (as a string)
-              and the name (as a string) of a product.
+            - A list of lists, where each inner list contains the
+              coefficient (as a string) and the name (as a string) of a
+              reactant.
+            - A list of lists, where each inner list contains the
+              coefficient (as a string) and the name (as a string) of a
+              product.
             - A list of strings representing the conditions.
     """
     if encoding is None:
@@ -79,9 +85,11 @@ def get_reactions(file_path, encoding=None):
                     else []
                 )
                 # 左づめ表記なっていない場合に対応
-                reactants = [sublist for sublist in reactants
-                            if any(sublist) and
-                            not any('>' in element for element in sublist)]
+                reactants = [
+                    sublist for sublist in reactants
+                    if any(sublist) and
+                    not any('>' in element for element in sublist)
+                ]
 
                 # 反応条件のリスト
                 conditions = (
@@ -90,15 +98,19 @@ def get_reactions(file_path, encoding=None):
 
                 # productの分子数と分子のリスト
                 products = (
-                    [filtered_row[k:k + 2] for k in range(j + 1, len(filtered_row), 2)]
+                    [filtered_row[k:k + 2]
+                     for k in range(j + 1, len(filtered_row), 2)]
                     if j > 0
                     else []
                 )
-                # 反応条件の有無により行の長さが変わるため、全ての要素が空の化学種を削除
+                # 反応条件の有無により行の長さが変わるため、
+                # 全ての要素が空の化学種を削除
                 products = [sublist for sublist in products if any(sublist)]
 
                 # 反応式をネストしたリストとして構築
-                reaction_equations.append([ID_k, reactants, products, conditions])
+                reaction_equations.append(
+                    [ID_k, reactants, products, conditions]
+                )
 
     return reaction_equations
 
@@ -107,10 +119,12 @@ def get_unique_species(reaction_equations):
     """Extract unique chemical species from elementary reactions.
 
     Args:
-        reaction_equations (list): A list of lists representing elementary reactions.
+        reaction_equations (list): A list of lists representing elementary
+            reactions.
 
     Returns:
-        list: A list of unique chemical species sorted by their appearance order.
+        list: A list of unique chemical species sorted by their appearance
+            order.
     """
     species = []
     flatten_species = []
@@ -125,43 +139,56 @@ def get_unique_species(reaction_equations):
 
 
 def to_chempy_style(reaction):
-    """Converts a reaction equation list to a ChemPy-style dictionary representation.
+    """Convert a reaction equation list to a ChemPy-style dictionary.
 
     Args:
-        reaction (list): A list representing a reaction equation in the format
-                         [['ID', rate_constant], [[coeff, reactant1], ...], [[coeff, product1], ...]].
+        reaction (list): A list representing a reaction equation in the
+            format [['ID', rate_constant], [[coeff, reactant1], ...],
+            [[coeff, product1], ...]].
 
     Returns:
-        list: A list containing the reaction ID and rate constant, followed by two dictionaries
-              representing the reactants and products with their coefficients.
+        list: A list containing the reaction ID and rate constant, followed
+            by two dictionaries representing the reactants and products with
+            their coefficients.
     """
-    e_dict = [reaction[0],
-              dict(
-                  map(
-                      lambda x: (x[1], float(x[0]) if x[0] != "" else 1), reaction[1]
-                  )),
-              dict(
-                  map(
-                      lambda x: (x[1], float(x[0]) if x[0] != "" else 1), reaction[2]
-                  ))]
+    e_dict = [
+        reaction[0],
+        dict(
+            map(
+                lambda x: (x[1], float(x[0]) if x[0] != "" else 1),
+                reaction[1]
+            )
+        ),
+        dict(
+            map(
+                lambda x: (x[1], float(x[0]) if x[0] != "" else 1),
+                reaction[2]
+            )
+        )
+    ]
     return e_dict
 
 
 def reactant_consumption(reaction_equation):
     """Generate rate law equations for reactant consumption.
-    The equation and the coefficient were determined as follows,
-    when aA + bB -> cC + dD
+    
+    The rate law equations and coefficients are determined as follows.
+    For a reaction aA + bB -> cC + dD:
     -d[A]/dt = k * A^a * B^b
     -(1/a)d[A]/dt = -(1/b)d[B]/dt = (1/c)d[C]/dt = (1/d)d[D]/dt
     That is,
     -d[A]/dt = -(a/b)d[B]/dt = (a/c)d[C]/dt = (a/d)d[D]/dt
 
     Args:
-        reaction_equation (list): A list representing a reaction equation in the format
-                                  [['ID', rate_constant], [[coeff, reactant1], ...], [[coeff, product1], ...]].
+        reaction_equation (list): A list representing a reaction equation
+            in the format [['ID', rate_constant], [[coeff, reactant1], ...],
+            [[coeff, product1], ...]].
 
     Returns:
-        list: reaction_equation (list) + RHS of rate law equations + coefficient of rate law equations
+        list: The input reaction_equation list extended with:
+            - A string representing the RHS of the rate law equation
+            - A list of coefficients for reactants
+            - A list of coefficients for products
     """
     reactant_eq = reaction_equation[:]
     rate_constant = 'k' + reaction_equation[0][0]
@@ -187,13 +214,23 @@ def reactant_consumption(reaction_equation):
 
 
 def generate_ode(reaction):
-    """Used in the function 'generate_sys_ode'
+    """Generate ODE expressions for a single reaction.
+    
+    This function is used internally by 'generate_sys_ode' to process
+    individual reactions and generate differential equation expressions
+    for each chemical species involved in the reaction.
     
     Args:
-        reaction (list): A list representing a reaction equation.
+        reaction (list): A list representing a reaction equation in the
+            format [['ID', rate_constant], [[coeff, reactant1], ...],
+            [[coeff, product1], ...], conditions,
+            [rate_law_string, [reactant_coeffs], [product_coeffs]]].
+            The reaction must have at least 5 elements.
         
     Returns:
-        defaultdict: A dictionary mapping species names to their ODE expressions.
+        defaultdict: A dictionary mapping species names (str) to their ODE
+            expression strings. Reactants contribute negative terms, products
+            contribute positive terms.
     """
     dict_species = defaultdict(str)
     LHSs = []  # 常微分方程式左辺
@@ -207,11 +244,14 @@ def generate_ode(reaction):
 
     for i, half_reaction in enumerate(reaction[1:3]):
         for j, species in enumerate(half_reaction):
-            LHS_ODE = str(species[1])  # for human interface, str('d'+species[1]+'/dt')
+            # for human interface, str('d'+species[1]+'/dt')
+            LHS_ODE = str(species[1])
             if i == 0:  # reactants
-                RHS_ODE = str('-' + reaction[4][1][j] + '*' + reaction[4][0])
+                RHS_ODE = str('-' + reaction[4][1][j] + '*' +
+                              reaction[4][0])
             else:  # i==1, products
-                RHS_ODE = str('+' + reaction[4][2][j] + '*' + reaction[4][0])
+                RHS_ODE = str('+' + reaction[4][2][j] + '*' +
+                              reaction[4][0])
             RHS_ODE = RHS_ODE.replace("-*", "-").replace("+*", "+")
             LHSs.append(LHS_ODE)
             RHSs.append(RHS_ODE)
@@ -276,12 +316,17 @@ class RxnToODE:
     
     Attributes:
         file_path (str): The path to the CSV file containing reaction data.
-        reactant_eq (list): A list of reactant equations generated from the file.
+        reactant_eq (list): A list of reactant equations generated from
+            the file.
         t (Symbol): SymPy symbol for time variable.
-        function_names (list): List of chemical species names extracted from reactions.
-        functions_dict (dict): Dictionary mapping species names to SymPy functions.
-        rate_consts_dict (dict): Dictionary of rate constants extracted from reactions.
-        sympy_symbol_dict (dict): Dictionary of SymPy symbols and functions.
+        function_names (list): List of chemical species names extracted
+            from reactions.
+        functions_dict (dict): Dictionary mapping species names to SymPy
+            functions.
+        rate_consts_dict (dict): Dictionary of rate constants extracted
+            from reactions.
+        sympy_symbol_dict (dict): Dictionary of SymPy symbols and
+            functions.
         sys_odes_dict (dict): Dictionary of ODE expressions.
     """
     
@@ -289,24 +334,31 @@ class RxnToODE:
         """Initialize the RxnToODE class.
         
         Args:
-            file_path (str): The path to the CSV file containing reaction data.
-            encoding (str, optional): The encoding of the CSV file. Defaults to 'utf-8' if None.
+            file_path (str): The path to the CSV file containing reaction
+                data.
+            encoding (str, optional): The encoding of the CSV file.
+                Defaults to 'utf-8' if None.
         """
         self.file_path = file_path
         self.encoding = encoding if encoding else 'utf-8'
         
         # ファイルから反応式を読み込み、reactant_eqを生成
         reaction_equations = get_reactions(file_path, self.encoding)
-        self.reactant_eq = [reactant_consumption(rxn) for rxn in reaction_equations]
-        
+        self.reactant_eq = [
+            reactant_consumption(rxn) for rxn in reaction_equations
+        ]
+
         self.t = symbols('t')
         self.function_names = get_unique_species(reaction_equations)
-        self.functions_dict = dict(zip(self.function_names,
-                                      [Function(name) for name in self.function_names]))
+        self.functions_dict = dict(
+            zip(self.function_names,
+                [Function(name) for name in self.function_names])
+        )
         self.rate_consts_dict = rate_constants(self.reactant_eq)
         self.rate_consts_dict = {
             key: val if isinstance(val, float) else Symbol(val)
-            for key, val in self.rate_consts_dict.items()} # added 08/31/2025
+            for key, val in self.rate_consts_dict.items()
+        }  # added 08/31/2025
         
         # 文字列内で使用するシンボル、関数、定数を統合
         self.sympy_symbol_dict = {'t': self.t, 'Derivative': Derivative}
@@ -324,7 +376,10 @@ class RxnToODE:
         """
         system_of_equations = []
         for key in self.sys_odes_dict.keys():
-            rhs_expr = parse_expr(self.sys_odes_dict[key], local_dict=self.sympy_symbol_dict)
+            rhs_expr = parse_expr(
+                self.sys_odes_dict[key],
+                local_dict=self.sympy_symbol_dict
+            )
             lhs = Derivative(self.functions_dict[key](self.t), self.t)
             eq = Eq(lhs, rhs_expr)
             system_of_equations.append(eq)
@@ -338,7 +393,9 @@ class RxnToODE:
         """
         ode_expressions = {}
         for key in self.sys_odes_dict.keys():
-            rhs_expr = parse_expr(self.sys_odes_dict[key], local_dict=self.sympy_symbol_dict)
+            rhs_expr = parse_expr(
+                self.sys_odes_dict[key],
+                local_dict=self.sympy_symbol_dict
+            )
             ode_expressions[key] = rhs_expr
         return ode_expressions
-    

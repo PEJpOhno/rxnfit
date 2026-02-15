@@ -6,3 +6,8 @@ src/rxnfit/.DS_Store
 rxnfit_sample_script_2.ipynb
 rxnfit_sample_script_3.ipynb
 venv*
+build/
+*.egg-info/
+dist/
+docs/build/*
+!docs/build/

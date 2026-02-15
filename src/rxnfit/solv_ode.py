@@ -4,29 +4,70 @@
 
 # 09/07/2025, M. Ohno
 
+"""
+Calculate and visualize the time evolution of chemical species
+based on reaction rate equations with all rate constants known.
+"""
+
 from dataclasses import dataclass, field
 from typing import Optional
 import sys
+from sympy import Basic as SympyBasic
 
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
-from .build_ode import RxnODEbuild
+from .build_ode import RxnODEbuild, create_system_rhs
 
 
-# ODEソルバーへのパラメータ指定  
 @dataclass
 class SolverConfig:
-    y0: list              # 初期濃度（必須）
-    t_span: tuple         # 時間範囲（必須）
-    t_eval: Optional[np.ndarray] = field(default=None)  # 任意
-    method: str = "RK45"  # 任意
-    rtol: float = 1e-6    # 任意
+    """Configuration parameters for the ODE solver.
+    
+    Attributes:
+        y0 (list): Initial concentrations for all species (required).
+        t_span (tuple): Time span for integration as (t_start, t_end)
+            (required).
+        t_eval (Optional[np.ndarray]): Time points at which to evaluate
+            the solution. If None, the solver chooses the time points.
+        method (str): Integration method to use. Defaults to "RK45".
+        rtol (float): Relative tolerance for the solver. Defaults to 1e-6.
+    """
+    y0: list
+    t_span: tuple
+    t_eval: Optional[np.ndarray] = field(default=None)
+    method: str = "RK45"
+    rtol: float = 1e-6
 
 
 class RxnODEsolver:
+    """Solver for ODE systems representing chemical reaction kinetics.
+    
+    This class integrates ODE systems using scipy.solve_ivp and provides
+    methods to visualize the time evolution of chemical species.
+    
+    Attributes:
+        builder (RxnODEbuild): The ODE builder instance containing the
+            reaction system definition.
+        config (SolverConfig): Configuration parameters for the solver.
+        ode_construct (tuple, optional): ODE system construction data.
+            Set after calling solve_system().
+        solution (scipy.integrate.OdeResult, optional): Solution from
+            numerical integration. Set after calling solve_system().
+    """
+    
     def __init__(self, builder: RxnODEbuild, config: SolverConfig):
+        """Initialize the ODE solver.
+        
+        Args:
+            builder (RxnODEbuild): The ODE builder instance containing
+                the reaction system definition.
+            config (SolverConfig): Configuration parameters for the solver.
+        
+        Raises:
+            SystemExit: If rate constants validation fails.
+        """
         # 反応速度定数の型をチェック
         if not self._validate_rate_constants(builder.rate_consts_dict):
             print("reconfirm rate constants")
@@ -39,45 +80,54 @@ class RxnODEsolver:
         self.solution = None
 
     def _validate_rate_constants(self, rate_consts_dict):
-        """反応速度定数の辞書の値が全てfloatかどうかをチェックする
+        """Validate that all rate constants are numeric or symbolic.
+        
+        Checks that all values in the rate constants dictionary are either
+        numeric types (int, float) or SymPy symbolic expressions. This
+        ensures the rate constants are suitable for numerical integration.
         
         Args:
-            rate_consts_dict (dict): 反応速度定数の辞書
+            rate_consts_dict (dict): Dictionary of rate constants.
             
         Returns:
-            bool: 全ての値がfloatの場合はTrue、そうでない場合はFalse
+            bool: True if all values are numeric or symbolic, False otherwise.
         """
         if not isinstance(rate_consts_dict, dict):
             return False
-        
+
         for key, value in rate_consts_dict.items():
-            if not isinstance(value, (int, float)):
-                return False
-        
+            # Accept Python numeric types, NumPy numeric types,
+            # and SymPy symbolic values
+            if isinstance(value, SympyBasic):
+                continue
+            if isinstance(value, (int, float)):
+                continue
+            return False
+
         return True
 
-
     def solve_system(self):
-
+        """Solve the ODE system numerically.
+        
+        Performs numerical integration of the ODE system using scipy.solve_ivp.
+        The solution is stored internally and also returned.
+        
+        Returns:
+            tuple: A tuple containing:
+                - ode_construct (tuple): ODE system construction data including
+                    system_of_equations, sympy_symbol_dict, ode_system,
+                    function_names, and rate_consts_dict.
+                - solution (scipy.integrate.OdeResult): Solution object from
+                    scipy.solve_ivp containing time points and concentrations.
+                    May be None if integration fails.
+        """
         # 数値積分に必要なオブジェクトを取得
         ode_construct = self.builder.get_ode_system()
         (system_of_equations, sympy_symbol_dict,
          ode_system, function_names, rate_consts_dict) = ode_construct
 
-        # 微分方程式の右辺を定義
-        def system_rhs(t, y):
-            """ODEシステムの右辺を計算する関数"""
-            rhs_odesys = []
-            for i, species_name in enumerate(function_names):
-                if species_name in ode_system:
-                    try:
-                        rhs_odesys.append(ode_system[species_name](t, *y))
-                    except Exception as e:
-                        print(f"Error in {species_name}: {e}")
-                        rhs_odesys.append(0.0)
-                else:
-                    rhs_odesys.append(0.0)
-            return rhs_odesys
+        # 共通関数を使用して微分方程式の右辺を定義
+        system_rhs = create_system_rhs(ode_system, function_names)
 
         # 数値積分を実行
         solution = None
@@ -101,9 +151,21 @@ class RxnODEsolver:
 
     # 結果をプロット
     def solution_plot(self, solution=None):
+        """Plot the time evolution of all chemical species.
+        
+        Creates a time-course plot showing the concentration of each
+        species over time. Also prints the final concentrations at the
+        last time point.
+        
+        Args:
+            solution (scipy.integrate.OdeResult, optional): Solution object
+                to plot. If None, uses the solution stored internally from
+                solve_system(). Defaults to None.
+        """
         sol = solution if solution is not None else self.solution
         if sol is None:
-            print("No solution to plot. Run solve_system() first or pass a solution.")
+            print("No solution to plot. Run solve_system() first "
+                  "or pass a solution.")
             return
 
         unique_species = self.builder.function_names
@@ -123,6 +185,8 @@ class RxnODEsolver:
 
         # 最終時刻での濃度を表示
         print("\n=== Concentration at the final time point ===")
-        final_concentrations = {name: conc[-1] for name, conc in zip(unique_species, sol.y)}
+        final_concentrations = {
+            name: conc[-1] for name, conc in zip(unique_species, sol.y)
+        }
         for name, conc in final_concentrations.items():
             print(f"{name}: {conc:.6f}")
