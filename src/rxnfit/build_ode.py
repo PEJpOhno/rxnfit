@@ -12,24 +12,24 @@ from .rxn_reader import RxnToODE
 
 class RxnODEbuild(RxnToODE):
     """A class for building ODE systems from reaction definitions.
-    
+
     This class extends RxnToODE to construct symbolic ODE expressions and
     generate numerical functions that can be used by external solvers
     (e.g., scipy.solve_ivp) for time integration.
-    
+
     Attributes:
         Inherits all attributes from RxnToODE class.
-        
+
     Methods:
         create_ode_system(): Creates numerical ODE functions for integration.
         get_ode_system(): Returns complete ODE system for numerical solvers.
         debug_ode_system(): Provides detailed debug information.
         get_ode_info(debug_info=False): Prints summary and optional debug info.
     """
-    
+
     def __init__(self, file_path, encoding=None):
         """Initialize the RxnODEbuild class.
-        
+
         Args:
             file_path (str): The path to the CSV file containing reaction
                 data.
@@ -38,22 +38,26 @@ class RxnODEbuild(RxnToODE):
         """
         # 親クラスの初期化を呼び出し
         super().__init__(file_path, encoding)
-    
+
     def create_ode_system(self):
         """Create ODE system functions for numerical integration.
-        
+
         Returns:
             dict: Dictionary mapping species names to ODE functions.
         """
         ode_functions = {}
-        
+
         # 引数の順序を明示的に定義（文字列として）
         args = ['t'] + self.function_names
-        
+
+        # 現在の rate_consts_dict を使用（フィッティング後に数値が入る）
+        local_dict = dict(self.sympy_symbol_dict)
+        local_dict.update(self.rate_consts_dict)
+
         for key in self.sys_odes_dict.keys():
             rhs_expr = parse_expr(
                 self.sys_odes_dict[key],
-                local_dict=self.sympy_symbol_dict
+                local_dict=local_dict
             )
 
             # 式内の関数呼び出しを変数に置換
@@ -74,7 +78,7 @@ class RxnODEbuild(RxnToODE):
                       f"for {key}: {e}")
 
         return ode_functions
-    
+
     def create_ode_system_with_rate_consts(self):
         """Create ODE system functions with rate constants as arguments.
 
@@ -131,7 +135,7 @@ class RxnODEbuild(RxnToODE):
 
     def get_ode_system(self):
         """Get ODE system objects for scipy.solve_ivp integration.
-        
+
         Returns:
             tuple: A tuple containing:
                 - system_of_equations: List of SymPy equations
@@ -142,15 +146,15 @@ class RxnODEbuild(RxnToODE):
         """
         system_of_equations = self.get_equations()
         ode_system = self.create_ode_system()
-        
+
         return (
             system_of_equations, self.sympy_symbol_dict,
             ode_system, self.function_names, self.rate_consts_dict
         )
-    
+
     def debug_ode_system(self):
         """Debug information for ODE system.
-        
+
         Returns:
             dict: Debug information about the ODE system.
         """
@@ -162,11 +166,11 @@ class RxnODEbuild(RxnToODE):
             'lambdify_args': ['t'] + self.function_names,
             'total_species': len(self.function_names)
         }
-        
+
         # 各ODE関数の引数情報を確認
         ode_functions = self.create_ode_system()
         debug_info['ode_functions_info'] = {}
-        
+
         for key, func in ode_functions.items():
             try:
                 # 関数の引数情報を取得（可能な場合）
@@ -176,7 +180,7 @@ class RxnODEbuild(RxnToODE):
                     'function_type': str(type(func)),
                     'function_repr': repr(func)
                 }
-                
+
                 # 関数の引数数を確認（可能な場合）
                 try:
                     # テスト用の引数を作成
@@ -191,18 +195,18 @@ class RxnODEbuild(RxnToODE):
                         'test_successful'] = False
                     debug_info['ode_functions_info'][key][
                         'test_error'] = str(test_e)
-                    
+
             except Exception as e:
                 debug_info['ode_functions_info'][key] = {
                     'error': str(e),
                     'expression': self.sys_odes_dict[key]
                 }
-        
+
         return debug_info
 
     def get_ode_info(self, debug_info: bool = False):
         """Print summary information about the ODE system.
-        
+
         Args:
             debug_info (bool, optional): If True, also print detailed debug
                 information. Defaults to False.
@@ -223,11 +227,11 @@ def create_system_rhs(ode_functions_dict, function_names,
                       rate_const_values=None,
                       symbolic_rate_const_keys=None):
     """Create a function to compute the right-hand side of an ODE system.
-    
+
     This function creates a closure that captures the ODE functions and
     parameters, returning a function with the signature (t, y) required
     by scipy.solve_ivp.
-    
+
     Args:
         ode_functions_dict (dict): Dictionary mapping species names to
             their ODE functions.
@@ -246,11 +250,11 @@ def create_system_rhs(ode_functions_dict, function_names,
     # クロージャでパラメータをキャプチャ（solve_ivpは(t, y)シグネチャを要求）
     def system_rhs(t, y):
         """Compute the right-hand side of the ODE system.
-        
+
         Args:
             t (float): Current time.
             y (array-like): Current state vector (concentrations).
-            
+
         Returns:
             list: List of derivatives for each species in function_names order.
         """
@@ -301,4 +305,3 @@ def create_system_rhs(ode_functions_dict, function_names,
         return rhs_odesys
 
     return system_rhs
-

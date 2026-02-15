@@ -150,17 +150,30 @@ class RxnODEsolver:
         return ode_construct, solution
 
     # 結果をプロット
-    def solution_plot(self, solution=None):
+    def solution_plot(self, solution=None, expdata_df=None):
         """Plot the time evolution of all chemical species.
         
-        Creates a time-course plot showing the concentration of each
-        species over time. Also prints the final concentrations at the
-        last time point.
-        
+        Creates a time-course plot showing the simulated concentration of
+        each species over time. Optionally overlays experimental data
+        points with colors matching the simulation lines.
+        Also prints the final concentrations at the last time point.
+
         Args:
-            solution (scipy.integrate.OdeResult, optional): Solution object
-                to plot. If None, uses the solution stored internally from
-                solve_system(). Defaults to None.
+            solution (scipy.integrate.OdeResult, optional): Solution
+                object from solve_ivp to plot. If None, uses the solution
+                stored internally from solve_system(). Defaults to None.
+            expdata_df (pandas.DataFrame, optional): Experimental data
+                for overlay. DataFrame format:
+                - First column: time values.
+                - Subsequent columns: concentrations for each species.
+                - Column names must match species names (e.g. from
+                  self.builder.function_names).
+                If provided, scatter points are drawn for each species
+                with the same color as the corresponding simulation line.
+                Missing values (NaN) are skipped. Defaults to None.
+
+        Returns:
+            None
         """
         sol = solution if solution is not None else self.solution
         if sol is None:
@@ -171,9 +184,19 @@ class RxnODEsolver:
         unique_species = self.builder.function_names
         print("\n=== Time-course plot ===")
         plt.figure(figsize=(12, 8))
+        ax = plt.gca()
 
         for i, species_name in enumerate(unique_species):
-            plt.plot(sol.t, sol.y[i], label=species_name, linewidth=2)
+            line, = ax.plot(sol.t, sol.y[i], label=species_name, linewidth=2)
+            color = line.get_color()
+            if expdata_df is not None and species_name in expdata_df.columns:
+                t_exp = expdata_df.iloc[:, 0].to_numpy()
+                c_exp = expdata_df[species_name].to_numpy()
+                mask = ~np.isnan(c_exp)
+                ax.scatter(
+                    t_exp[mask], c_exp[mask],
+                    color=color, marker='o', s=50, zorder=5, edgecolors='white'
+                )
 
         plt.xlabel('Time (s)', fontsize=12)
         plt.ylabel('Concentration', fontsize=12)
