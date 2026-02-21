@@ -5,9 +5,45 @@
 # 08/30/2025, M. Ohno
 
 from sympy import Function, Symbol, symbols, parse_expr, lambdify
+from sympy.core.symbol import Symbol as SympySymbol
 import inspect
 
 from .rxn_reader import RxnToODE
+
+
+def _resolve_rate_consts(rate_consts_dict):
+    """Resolve rate constants to numbers where possible (for ODE solver).
+
+    Values that are float are kept. Expressions (e.g. 2*k1) are evaluated
+    once all their free symbols have numeric values in the dict. Symbols
+    without values remain unresolved.
+
+    Args:
+        rate_consts_dict (dict): Maps key to float, Symbol, or SymPy Expr.
+
+    Returns:
+        dict: Subset of keys with numeric values (including from expressions).
+    """
+    resolved = {
+        k: v for k, v in rate_consts_dict.items()
+        if isinstance(v, (int, float))
+    }
+    changed = True
+    while changed:
+        changed = False
+        for k, v in rate_consts_dict.items():
+            if k in resolved:
+                continue
+            free_syms = getattr(v, 'free_symbols', None)
+            if not free_syms:
+                continue
+            if all(str(s) in resolved for s in free_syms):
+                try:
+                    resolved[k] = float(v.subs({s: resolved[str(s)] for s in free_syms}))
+                    changed = True
+                except (TypeError, ValueError):
+                    pass
+    return resolved
 
 
 class RxnODEbuild(RxnToODE):
@@ -42,6 +78,9 @@ class RxnODEbuild(RxnToODE):
     def create_ode_system(self):
         """Create ODE system functions for numerical integration.
 
+        Rate constants that are expressions (e.g. k2=k1*2) are resolved to
+        numbers when all referenced symbols have numeric values.
+
         Returns:
             dict: Dictionary mapping species names to ODE functions.
         """
@@ -50,9 +89,11 @@ class RxnODEbuild(RxnToODE):
         # 引数の順序を明示的に定義（文字列として）
         args = ['t'] + self.function_names
 
-        # 現在の rate_consts_dict を使用（フィッティング後に数値が入る）
+        # 式で定義された速度定数を数値に解決し、未解決は元の Symbol/Expr のまま
+        resolved = _resolve_rate_consts(self.rate_consts_dict)
         local_dict = dict(self.sympy_symbol_dict)
-        local_dict.update(self.rate_consts_dict)
+        for k, v in self.rate_consts_dict.items():
+            local_dict[k] = resolved.get(k, v)
 
         for key in self.sys_odes_dict.keys():
             rhs_expr = parse_expr(
@@ -94,14 +135,18 @@ class RxnODEbuild(RxnToODE):
                   [t] + function_names + symbolic_rate_const_keys
                 - list: List of symbolic rate constant keys in order
         """
-        from sympy.core.symbol import Symbol as SympySymbol
         ode_functions = {}
 
-        # シンボリックな速度定数のリスト（順序を保持）
-        symbolic_rate_const_keys = [
-            key for key, val in self.rate_consts_dict.items()
-            if isinstance(val, (Symbol, SympySymbol))
-        ]
+        # フィッティングで変える速度定数＝式の右辺に現れるシンボルのみ（式で定義されたものは含めない）
+        free_param_names = set()
+        for key, val in self.rate_consts_dict.items():
+            if isinstance(val, (int, float)):
+                continue
+            if isinstance(val, (Symbol, SympySymbol)):
+                free_param_names.add(val.name)
+            else:
+                free_param_names.update(str(s) for s in getattr(val, 'free_symbols', []))
+        symbolic_rate_const_keys = sorted(free_param_names)
 
         # 引数の順序を明示的に定義（速度定数も含む）
         args = ['t'] + self.function_names + symbolic_rate_const_keys

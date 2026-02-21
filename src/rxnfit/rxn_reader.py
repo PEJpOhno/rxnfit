@@ -73,10 +73,15 @@ def get_reactions(file_path, encoding=None):
             if len(filtered_row) > 1:
                 # reaction IDおよびkのリスト
                 ID_k = filtered_row[:2]
-                try:
-                    ID_k[1] = float(ID_k[1])
-                except ValueError:
+                k_cell = (ID_k[1] or '').strip()
+                if not k_cell:
                     ID_k[1] = 'k' + ID_k[0]
+                else:
+                    try:
+                        ID_k[1] = float(k_cell)
+                    except ValueError:
+                        # 数値化できない文字列はそのまま（式またはシンボル名）
+                        ID_k[1] = k_cell
 
                 # reactantの分子数と分子のリスト
                 reactants = (
@@ -293,19 +298,65 @@ def rate_constants(reactant_eq):
         reactant_eq (list): A list of reactant equations.
         
     Returns:
-        dict: A dictionary mapping rate constant keys to their values.
+        dict: A dictionary mapping rate constant keys to their values
+            (float or raw string for expressions/symbols).
     """
     rate_consts_dict = {}
     for e in reactant_eq:
         key = 'k' + e[0][0]
         try:
-            # Attempt to convert to float
             value = float(e[0][1])
-        except ValueError:
-            # If conversion fails, keep as string
+        except (ValueError, TypeError):
             value = e[0][1]
         rate_consts_dict[key] = value
     return rate_consts_dict
+
+
+def _build_rate_consts_sympy(raw_rate_consts):
+    """Convert raw rate constants to SymPy values (float, Symbol, or Expr).
+    
+    - float: kept as is.
+    - string: parsed as expression (e.g. "k1*2"); if that fails or is a
+      single identifier, treated as a symbol. Symbols in the expression
+      must be in the set of rate constant keys (allowed_keys); otherwise
+      ValueError is raised.
+    
+    Args:
+        raw_rate_consts (dict): Output of rate_constants(reactant_eq).
+        
+    Returns:
+        dict: rate_consts_dict with values as float, Symbol, or SymPy Expr.
+        
+    Raises:
+        ValueError: If an expression references a rate constant not in
+            the reaction set (e.g. "k99" when only k1, k2 exist).
+    """
+    allowed_keys = set(raw_rate_consts.keys())
+    sym_dict = {k: Symbol(k) for k in allowed_keys}
+    result = {}
+    for key, raw_val in raw_rate_consts.items():
+        if isinstance(raw_val, (int, float)):
+            result[key] = raw_val
+            continue
+        s = (raw_val if isinstance(raw_val, str) else str(raw_val)).strip()
+        try:
+            parsed = parse_expr(s, local_dict=sym_dict)
+        except Exception:
+            parsed = Symbol(s)
+        free_names = {str(sym) for sym in getattr(parsed, 'free_symbols', [])}
+        if isinstance(parsed, Symbol) and parsed.name not in allowed_keys:
+            raise ValueError(
+                "式の右辺に存在しない速度定数を指定しました: "
+                f"'{parsed.name}'. 使用可能な速度定数: {sorted(allowed_keys)}"
+            )
+        if free_names and not free_names.issubset(allowed_keys):
+            undefined = free_names - allowed_keys
+            raise ValueError(
+                "式の右辺に存在しない速度定数を指定しました: "
+                f"{undefined}. 使用可能な速度定数: {sorted(allowed_keys)}"
+            )
+        result[key] = parsed
+    return result
 
 
 class RxnToODE:
@@ -354,11 +405,8 @@ class RxnToODE:
             zip(self.function_names,
                 [Function(name) for name in self.function_names])
         )
-        self.rate_consts_dict = rate_constants(self.reactant_eq)
-        self.rate_consts_dict = {
-            key: val if isinstance(val, float) else Symbol(val)
-            for key, val in self.rate_consts_dict.items()
-        }  # added 08/31/2025
+        raw_rate_consts = rate_constants(self.reactant_eq)
+        self.rate_consts_dict = _build_rate_consts_sympy(raw_rate_consts)
         
         # 文字列内で使用するシンボル、関数、定数を統合
         self.sympy_symbol_dict = {'t': self.t, 'Derivative': Derivative}
