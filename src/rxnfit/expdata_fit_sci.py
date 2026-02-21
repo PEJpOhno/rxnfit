@@ -4,161 +4,25 @@
 
 # 01/03/2026, M. Ohno
 
-"""Load experimental data, extract initial values, and fit ODE parameters.
+"""Fit ODE parameters to experimental time-course data.
 
-Experimental data is passed as a list of DataFrames and returned as a list
-of (t_list, C_exp_list) tuples.
+This module provides functions and classes for fitting symbolic rate constants
+in ODE systems to experimental data using scipy.optimize.minimize.
 """
 
 import functools
 import numpy as np
-import pandas as pd
 from scipy.integrate import solve_ivp
 from scipy.optimize import minimize
 from sympy import Symbol
 from sympy.core.symbol import Symbol as SympySymbol
 
 from .build_ode import create_system_rhs
-
-
-def time_course(df):
-    """Extract time and concentration arrays from a DataFrame.
-
-    The first column must contain time values. Missing values are removed
-    per series (chemical species).
-
-    Args:
-        df (pandas.DataFrame): DataFrame with time in the first column and
-            chemical species concentrations in subsequent columns.
-
-    Returns:
-        tuple:
-            - t_list: List of time arrays, one per species. Each array
-              contains only the time points where that species has valid data.
-            - C_exp_list: List of concentration arrays, one per species.
-              Each array contains only the valid concentration values.
-    """
-    time = df.iloc[:, 0].to_numpy()
-
-    C_exp_list = []
-    t_list = []
-
-    for col in df.columns[1:]:
-        c = df[col]
-        mask = ~c.isna()          # Only non-missing values
-        t_list.append(time[mask])
-        C_exp_list.append(c[mask].to_numpy())
-
-    return t_list, C_exp_list
-
-
-def expdata_read(df_list):
-    """Read experimental data from a list of DataFrames.
-
-    Each DataFrame must have the same columns (time + species).
-    Always returns a list, even for a single DataFrame.
-
-    Args:
-        df_list (list[pandas.DataFrame]): List of DataFrames containing
-            experimental data. All DataFrames must have same column names.
-
-    Returns:
-        list[tuple]: List of (t_list, C_exp_list) tuples, one per DataFrame.
-            Each t_list is a list of time arrays (one per species column).
-            Each C_exp_list is a list of concentration arrays (one per
-            species column). Missing values are removed per species.
-
-    Raises:
-        ValueError: If df_list is empty or if DataFrames have different
-            column names.
-    """
-    if not df_list:
-        raise ValueError("df_list cannot be empty.")
-
-    base_cols = df_list[0].columns
-    all_same = all(df.columns.equals(base_cols) for df in df_list)
-    if not all_same:
-        raise ValueError("All DataFrames must have the same column names.")
-
-    datasets = []
-    for df in df_list:
-        t_list, C_exp_list = time_course(df)
-        datasets.append((t_list, C_exp_list))
-
-    return datasets
-
-
-def get_y0_from_expdata(df_list, function_names):
-    """Extract initial concentrations (t=0) from first row of each DataFrame.
-
-    Returns concentrations in function_names order. For multiple DataFrames,
-    returns a list of y0 vectors, one per DataFrame.
-
-    Args:
-        df_list (list[pandas.DataFrame]): List of DataFrames with time column
-            and chemical species columns.
-        function_names (list[str]): List of chemical species names in ODE
-            variable order.
-
-    Returns:
-        list[list[float]]: List of initial concentration vectors, one per
-            DataFrame. Each y0 is in function_names order. Missing values
-            are filled with 0. len(return) == len(df_list).
-
-    Raises:
-        ValueError: If df_list is empty or a species name is not found
-            in the DataFrame columns.
-    """
-    if not df_list:
-        raise ValueError("df_list cannot be empty.")
-
-    y0_list = []
-    for df in df_list:
-        first_row = df.iloc[0]
-        y0 = []
-        for name in function_names:
-            if name in df.columns:
-                val = first_row[name]
-                y0.append(0.0 if pd.isna(val) else float(val))
-            else:
-                raise ValueError(
-                    f"化学種 '{name}' がデータの列に見つかりません。"
-                )
-        y0_list.append(y0)
-
-    return y0_list
-
-
-def _align_expdata_to_function_names(
-        t_list, C_exp_list, columns, function_names):
-    """Align time_course output to function_names order.
-
-    time_course returns data in df.columns[1:] order. This function
-    reorders to match ODE function_names.
-
-    Args:
-        t_list (list): List of time arrays from time_course
-            (DataFrame column order).
-        C_exp_list (list): List of concentration arrays from time_course.
-        columns (list[str]): DataFrame column names (species only, no time).
-        function_names (list[str]): Chemical species names in ODE order.
-
-    Returns:
-        tuple: (t_aligned, C_aligned) in function_names order.
-
-    Raises:
-        ValueError: If a species in function_names is not in columns.
-    """
-    col_to_idx = {name: i for i, name in enumerate(columns)}
-    t_aligned = []
-    C_aligned = []
-    for name in function_names:
-        i = col_to_idx.get(name)
-        if i is None:
-            raise ValueError(f"化学種 '{name}' がデータの列にありません。")
-        t_aligned.append(t_list[i])
-        C_aligned.append(C_exp_list[i])
-    return t_aligned, C_aligned
+from .expdata_reader import (
+    expdata_read,
+    get_y0_from_expdata,
+    align_expdata_to_function_names
+)
 
 
 def _eval_ode_fit(t, *params, fit_ctx):
@@ -434,7 +298,7 @@ def solve_fit_model_multi(
 
     datasets = []
     for (t_list, C_exp_list), y0 in zip(datasets_raw, y0_list):
-        t_aligned, C_aligned = _align_expdata_to_function_names(
+        t_aligned, C_aligned = align_expdata_to_function_names(
             t_list, C_exp_list, columns, function_names
         )
         datasets.append({
@@ -477,12 +341,15 @@ class ExpDataFitSci:
         """Initialize the fitting context.
 
         Args:
-            builded_rxnode: RxnODEbuild instance (reaction system).
-            df_list (list): List of experimental DataFrames.
+            builded_rxnode (RxnODEbuild): Instance containing the reaction
+                system definition.
+            df_list (list[pandas.DataFrame]): List of experimental DataFrames.
+                All must have same structure (time + species columns).
             t_range (tuple[float, float]): Integration time span
                 (t_start, t_end). Required.
-            method (str, optional): solve_ivp method. Defaults to "RK45".
-            rtol (float, optional): solve_ivp relative tolerance.
+            method (str, optional): Integration method for solve_ivp.
+                Defaults to "RK45".
+            rtol (float, optional): Relative tolerance for solve_ivp.
                 Defaults to 1e-6.
         """
         self.builded_rxnode = builded_rxnode
@@ -580,15 +447,16 @@ class ExpDataFitSci:
         to RxnODEsolver.
 
         Args:
-            result: OptimizeResult from run_fit. If None, uses internal
-                result from last run_fit.
+            result (scipy.optimize.OptimizeResult, optional): OptimizeResult
+                from run_fit. If None, uses internal result from last run_fit.
+                Defaults to None.
 
         Returns:
             dict: Fitted rate constants {key: value} to merge into
                 builded_rxnode.rate_consts_dict.
 
         Raises:
-            RuntimeError: If result is None and run_fit not yet called.
+            RuntimeError: If result is None and run_fit has not been called.
         """
         res = result if result is not None else self._result
         if res is None or self._param_info is None:
@@ -603,6 +471,37 @@ def run_fit_multi(builded_rxnode, df_list, p0, t_range=None,
     """Convenience wrapper around ExpDataFitSci.run_fit.
 
     If t_range is None, derives from first DataFrame.
+
+    Args:
+        builded_rxnode (RxnODEbuild): Instance containing the reaction
+            system definition.
+        df_list (list[pandas.DataFrame]): List of experimental DataFrames.
+            All must have same structure (time + species columns).
+        p0 (list): Initial guess for symbolic rate constants
+            (in symbolic_rate_const_keys order).
+        t_range (tuple[float, float], optional): Integration time span
+            (t_start, t_end). If None, derives from first DataFrame.
+            Defaults to None.
+        method (str, optional): Integration method for solve_ivp.
+            Defaults to "RK45".
+        rtol (float, optional): Relative tolerance for solve_ivp.
+            Defaults to 1e-6.
+        opt_method (str, optional): scipy.optimize.minimize method.
+            Defaults to 'L-BFGS-B'.
+        bounds (list, optional): Bounds for each parameter. If None,
+            uses [(1e-10, None)] * n_params. Defaults to None.
+        verbose (bool, optional): Print optimization result.
+            Defaults to True.
+
+    Returns:
+        tuple: (result, param_info)
+            - result: scipy.optimize.OptimizeResult.
+            - param_info: Dict with symbolic_rate_consts, function_names,
+              n_params, n_datasets, y0_list.
+
+    Raises:
+        ValueError: If df_list is empty, column structure is invalid,
+            or len(p0) != number of symbolic rate constants.
     """
     if t_range is None:
         t_range = (
