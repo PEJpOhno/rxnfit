@@ -12,17 +12,20 @@ from .rxn_reader import RxnToODE
 
 
 def _resolve_rate_consts(rate_consts_dict):
-    """Resolve rate constants to numbers where possible (for ODE solver).
+    """Resolve rate constants to numeric values where possible.
 
-    Values that are float are kept. Expressions (e.g. 2*k1) are evaluated
-    once all their free symbols have numeric values in the dict. Symbols
-    without values remain unresolved.
+    Used when building ODE functions so that expression-defined constants
+    (e.g. k2 = 2*k1) are substituted to numbers when all referenced symbols
+    have numeric values. Float values are copied; expressions are evaluated
+    in dependency order; Symbol-only keys are left unresolved.
 
     Args:
-        rate_consts_dict (dict): Maps key to float, Symbol, or SymPy Expr.
+        rate_consts_dict (dict): Rate constant key -> float, sympy.Symbol,
+            or SymPy Expr (e.g. 2*k1).
 
     Returns:
-        dict: Subset of keys with numeric values (including from expressions).
+        dict: Key -> float for every key that could be resolved to a number.
+            Keys that remain Symbol or have unresolved symbols are omitted.
     """
     resolved = {
         k: v for k, v in rate_consts_dict.items()
@@ -39,7 +42,8 @@ def _resolve_rate_consts(rate_consts_dict):
                 continue
             if all(str(s) in resolved for s in free_syms):
                 try:
-                    resolved[k] = float(v.subs({s: resolved[str(s)] for s in free_syms}))
+                    subs = {s: resolved[str(s)] for s in free_syms}
+                    resolved[k] = float(v.subs(subs))
                     changed = True
                 except (TypeError, ValueError):
                     pass
@@ -47,42 +51,48 @@ def _resolve_rate_consts(rate_consts_dict):
 
 
 class RxnODEbuild(RxnToODE):
-    """A class for building ODE systems from reaction definitions.
+    """Build ODE systems and numerical RHS functions from reaction definitions.
 
-    This class extends RxnToODE to construct symbolic ODE expressions and
-    generate numerical functions that can be used by external solvers
-    (e.g., scipy.solve_ivp) for time integration.
+    Extends RxnToODE to produce callable ODE right-hand sides (e.g. for
+    scipy.solve_ivp) and supports rate constants as expressions (e.g. k2=k1*2).
+    Expression-defined constants are resolved to numbers when building
+    create_ode_system(); for fitting, only free symbolic parameters appear
+    in create_ode_system_with_rate_consts().
 
     Attributes:
-        Inherits all attributes from RxnToODE class.
+        Inherits all attributes from RxnToODE.
 
     Methods:
-        create_ode_system(): Creates numerical ODE functions for integration.
-        get_ode_system(): Returns complete ODE system for numerical solvers.
-        debug_ode_system(): Provides detailed debug information.
-        get_ode_info(debug_info=False): Prints summary and optional debug info.
+        create_ode_system(): Numerical ODE functions (t, y) with rate
+            constants resolved or embedded.
+        create_ode_system_with_rate_consts(): ODE functions with rate
+            constants as extra arguments (for fitting).
+        get_ode_system(): Full ODE construction tuple for solvers.
+        debug_ode_system(): Detailed debug info.
+        get_ode_info(debug_info=False): Print summary and optional debug.
     """
 
     def __init__(self, file_path, encoding=None):
-        """Initialize the RxnODEbuild class.
+        """Initialize from a reaction CSV file.
 
         Args:
-            file_path (str): The path to the CSV file containing reaction
-                data.
-            encoding (str, optional): The encoding of the CSV file.
-                Defaults to 'utf-8' if None.
+            file_path (str): Path to the CSV file containing reaction data.
+            encoding (str, optional): File encoding. Defaults to 'utf-8'
+                if None.
         """
         # 親クラスの初期化を呼び出し
         super().__init__(file_path, encoding)
 
     def create_ode_system(self):
-        """Create ODE system functions for numerical integration.
+        """Build numerical ODE right-hand side functions for integration.
 
         Rate constants that are expressions (e.g. k2=k1*2) are resolved to
-        numbers when all referenced symbols have numeric values.
+        numbers via _resolve_rate_consts when all referenced symbols have
+        numeric values; otherwise the expression or Symbol is left in place.
+        Functions take (t, y) with y in function_names order.
 
         Returns:
-            dict: Dictionary mapping species names to ODE functions.
+            dict: Species name -> callable(t, *y) returning d(species)/dt.
         """
         ode_functions = {}
 
@@ -121,19 +131,19 @@ class RxnODEbuild(RxnToODE):
         return ode_functions
 
     def create_ode_system_with_rate_consts(self):
-        """Create ODE system functions with rate constants as arguments.
+        """Build ODE functions with rate constants as explicit arguments.
 
-        This method creates lambdify functions that include rate constants
-        as arguments, allowing them to be passed dynamically without
-        relying on global scope.
-        This method is used for the function 'solve_fit_model'
+        Used for fitting: rate constants are passed in at call time instead
+        of being embedded. Only "free" parameters appear: keys that are
+        Symbol or that appear inside expression-defined constants (e.g. k1
+        in k2=2*k1). Keys defined only by expressions (e.g. k2) do not
+        appear in symbolic_rate_const_keys.
 
         Returns:
-            tuple: A tuple containing:
-                - dict: Dictionary mapping species names to ODE functions.
-                  Functions accept arguments:
-                  [t] + function_names + symbolic_rate_const_keys
-                - list: List of symbolic rate constant keys in order
+            tuple: (ode_functions, symbolic_rate_const_keys)
+                - ode_functions: Species name -> callable(t, *y, *rate_consts).
+                - symbolic_rate_const_keys: List of free rate constant names
+                  in order (e.g. ['k1', 'k3'] when k2=k1*2).
         """
         ode_functions = {}
 
@@ -145,7 +155,8 @@ class RxnODEbuild(RxnToODE):
             if isinstance(val, (Symbol, SympySymbol)):
                 free_param_names.add(val.name)
             else:
-                free_param_names.update(str(s) for s in getattr(val, 'free_symbols', []))
+                syms = getattr(val, 'free_symbols', [])
+                free_param_names.update(str(s) for s in syms)
         symbolic_rate_const_keys = sorted(free_param_names)
 
         # 引数の順序を明示的に定義（速度定数も含む）
@@ -179,15 +190,12 @@ class RxnODEbuild(RxnToODE):
         return ode_functions, symbolic_rate_const_keys
 
     def get_ode_system(self):
-        """Get ODE system objects for scipy.solve_ivp integration.
+        """Return the full ODE construction for scipy.solve_ivp.
 
         Returns:
-            tuple: A tuple containing:
-                - system_of_equations: List of SymPy equations
-                - sympy_symbol_dict: Dictionary of SymPy symbols
-                - ode_system: ODE system functions
-                - function_names: List of function names
-                - rate_consts_dict: Dictionary of rate constants
+            tuple: (system_of_equations, sympy_symbol_dict, ode_system,
+                function_names, rate_consts_dict). ode_system is from
+                create_ode_system() (rate constants resolved or embedded).
         """
         system_of_equations = self.get_equations()
         ode_system = self.create_ode_system()
@@ -198,10 +206,11 @@ class RxnODEbuild(RxnToODE):
         )
 
     def debug_ode_system(self):
-        """Debug information for ODE system.
+        """Collect debug information for the ODE system.
 
         Returns:
-            dict: Debug information about the ODE system.
+            dict: function_names, rate_constants, ode_expressions,
+                lambdify_args, ode_functions_info (and test results).
         """
         debug_info = {
             'function_names': self.function_names,
@@ -250,11 +259,11 @@ class RxnODEbuild(RxnToODE):
         return debug_info
 
     def get_ode_info(self, debug_info: bool = False):
-        """Print summary information about the ODE system.
+        """Print a short summary of the ODE system (and optionally debug).
 
         Args:
             debug_info (bool, optional): If True, also print detailed debug
-                information. Defaults to False.
+                (e.g. lambdify args, ODE expressions). Defaults to False.
         """
         print(f"number of species: {len(self.function_names)}")
         print(f"unique species: {self.function_names}")
@@ -271,37 +280,37 @@ class RxnODEbuild(RxnToODE):
 def create_system_rhs(ode_functions_dict, function_names,
                       rate_const_values=None,
                       symbolic_rate_const_keys=None):
-    """Create a function to compute the right-hand side of an ODE system.
+    """Build the RHS function (t, y) for scipy.solve_ivp.
 
-    This function creates a closure that captures the ODE functions and
-    parameters, returning a function with the signature (t, y) required
-    by scipy.solve_ivp.
+    Creates a closure over the ODE functions and optional rate constant
+    values. When rate_const_values and symbolic_rate_const_keys are given,
+    the ODE functions are called with (t, y, *rate_consts) in the order
+    of symbolic_rate_const_keys.
 
     Args:
-        ode_functions_dict (dict): Dictionary mapping species names to
-            their ODE functions.
-        function_names (list): List of chemical species names in order.
-        rate_const_values (dict, optional): Dictionary of rate constant
-            values to be passed dynamically. If provided, rate constants
-            are passed as function arguments rather than being embedded.
-        symbolic_rate_const_keys (list, optional): List of rate constant
-            keys in order. Required if rate_const_values is provided.
+        ode_functions_dict (dict): Species name -> ODE function (as from
+            create_ode_system or create_ode_system_with_rate_consts).
+        function_names (list): Species names in the same order as y.
+        rate_const_values (dict, optional): Rate constant key -> numeric
+            value. Used when ODE functions expect rate constants as args.
+        symbolic_rate_const_keys (list, optional): Order of rate constant
+            keys matching the ODE functions. Required if rate_const_values
+            is provided.
 
     Returns:
-        function: A function system_rhs(t, y) that computes the right-hand
-            side of the ODE system. The function accepts time t and state
-            vector y, and returns a list of derivatives for each species.
+        callable: system_rhs(t, y) returning a list of d(species)/dt in
+            function_names order.
     """
     # クロージャでパラメータをキャプチャ（solve_ivpは(t, y)シグネチャを要求）
     def system_rhs(t, y):
-        """Compute the right-hand side of the ODE system.
+        """Compute d(species)/dt for the current (t, y).
 
         Args:
             t (float): Current time.
-            y (array-like): Current state vector (concentrations).
+            y (array-like): Current concentrations in function_names order.
 
         Returns:
-            list: List of derivatives for each species in function_names order.
+            list: Derivatives for each species in function_names order.
         """
         rhs_odesys = []
         for species_name in function_names:

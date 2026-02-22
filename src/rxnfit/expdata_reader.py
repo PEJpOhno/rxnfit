@@ -81,11 +81,30 @@ def expdata_read(df_list):
     return datasets
 
 
+def get_t0_from_expdata(df_list):
+    """Extract initial time from first row of each DataFrame.
+
+    The first column is assumed to be time. Returns one float per DataFrame.
+
+    Args:
+        df_list (list[pandas.DataFrame]): List of DataFrames with time in
+            the first column.
+
+    Returns:
+        list[float]: Initial time (first row, first column) for each
+            DataFrame. len(return) == len(df_list).
+    """
+    if not df_list:
+        raise ValueError("df_list cannot be empty.")
+    return [float(df.iloc[0, 0]) for df in df_list]
+
+
 def get_y0_from_expdata(df_list, function_names):
-    """Extract initial concentrations (t=0) from first row of each DataFrame.
+    """Extract initial concentrations from first row of each DataFrame.
 
     Returns concentrations in function_names order. For multiple DataFrames,
-    returns a list of y0 vectors, one per DataFrame.
+    returns a list of y0 vectors, one per DataFrame. The time of the first
+    row can be obtained with get_t0_from_expdata; it is not required to be 0.
 
     Args:
         df_list (list[pandas.DataFrame]): List of DataFrames with time column

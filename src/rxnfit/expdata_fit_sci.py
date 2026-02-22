@@ -20,6 +20,7 @@ from sympy.core.symbol import Symbol as SympySymbol
 from .build_ode import create_system_rhs
 from .expdata_reader import (
     expdata_read,
+    get_t0_from_expdata,
     get_y0_from_expdata,
     align_expdata_to_function_names
 )
@@ -143,11 +144,13 @@ def _compute_multi_residual(params, fit_ctx):
         C_exp_list = ds['C_exp_list']
 
         t_all = np.unique(np.concatenate(t_list))
+        t_start = ds['t0']  # 1行目の時間を積分の初期時刻として使用
+        t_span_ds = (t_start, t_span[1])
 
         try:
             solution = solve_ivp(
                 system_rhs,
-                t_span,
+                t_span_ds,
                 y0,
                 t_eval=t_all,
                 method=method,
@@ -248,7 +251,8 @@ def solve_fit_model_multi(
         method="RK45", rtol=1e-6):
     """Create residual function for multi-dataset fitting (varying y0).
 
-    y0 for each dataset is taken from the first row (t=0) of each DataFrame.
+    y0 and the initial time (t0) for each dataset are taken from the first
+    row of each DataFrame. Integration runs from that t0 to t_span[1].
     Only rate constants are optimized; minimizes sum of residuals across
     all datasets.
 
@@ -294,15 +298,16 @@ def solve_fit_model_multi(
     # データセットの読み込みと整列
     datasets_raw = expdata_read(df_list)
     y0_list = get_y0_from_expdata(df_list, function_names)
+    t0_list = get_t0_from_expdata(df_list)  # 1行目の時間を積分の初期時刻に使用
     columns = list(df_list[0].columns[1:])  # 化学種列のみ
 
     datasets = []
-    for (t_list, C_exp_list), y0 in zip(datasets_raw, y0_list):
+    for (t_list, C_exp_list), y0, t0 in zip(datasets_raw, y0_list, t0_list):
         t_aligned, C_aligned = align_expdata_to_function_names(
             t_list, C_exp_list, columns, function_names
         )
         datasets.append({
-            'y0': y0, 't_list': t_aligned, 'C_exp_list': C_aligned
+            'y0': y0, 't0': t0, 't_list': t_aligned, 'C_exp_list': C_aligned
         })
 
     fit_ctx = {
@@ -323,6 +328,7 @@ def solve_fit_model_multi(
         'n_params': len(symbolic_rate_const_keys),
         'n_datasets': len(datasets),
         'y0_list': y0_list,
+        't0_list': t0_list,
     }
 
     return residual_func, param_info
@@ -433,9 +439,10 @@ class ExpDataFitSci:
         if self._param_info is None:
             raise RuntimeError("run_fit を先に実行してください。")
         y0 = self._param_info['y0_list'][dataset_index]
+        t0 = self._param_info['t0_list'][dataset_index]
         return {
             'y0': y0,
-            't_span': self.t_range,
+            't_span': (t0, self.t_range[1]),
             'method': self.method,
             'rtol': self.rtol,
         }

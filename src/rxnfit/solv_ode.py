@@ -10,8 +10,9 @@ based on reaction rate equations with all rate constants known.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List
 import sys
+import warnings
 from sympy import Basic as SympyBasic
 
 import numpy as np
@@ -150,8 +151,8 @@ class RxnODEsolver:
         return ode_construct, solution
 
     # 結果をプロット
-    def solution_plot(self, solution=None, expdata_df=None):
-        """Plot the time evolution of all chemical species.
+    def solution_plot(self, solution=None, expdata_df=None, species: Optional[List[str]] = None):
+        """Plot the time evolution of chemical species.
         
         Creates a time-course plot showing the simulated concentration of
         each species over time. Optionally overlays experimental data
@@ -170,10 +171,21 @@ class RxnODEsolver:
                   self.builder.function_names).
                 If provided, scatter points are drawn for each species
                 with the same color as the corresponding simulation line.
-                Missing values (NaN) are skipped. Defaults to None.
+                Missing values (NaN) are skipped. When provided, the x-axis
+                is set to the solution time range so the model curve is
+                not compressed when experimental data has a wider range.
+                Defaults to None.
+            species (list[str], optional): List of species names to plot.
+                If None, all species in the ODE system are plotted.
+                If provided, only these species are drawn. Any name not
+                in the ODE system triggers a warning and ValueError.
+                Defaults to None.
 
         Returns:
             None
+
+        Raises:
+            ValueError: If a name in species is not in the ODE system.
         """
         sol = solution if solution is not None else self.solution
         if sol is None:
@@ -181,12 +193,36 @@ class RxnODEsolver:
                   "or pass a solution.")
             return
 
-        unique_species = self.builder.function_names
+        all_species = self.builder.function_names
+        if species is None:
+            plot_species = list(all_species)
+        else:
+            invalid = [s for s in species if s not in all_species]
+            if invalid:
+                warnings.warn(
+                    f"次の化学種は微分方程式に現れません: {invalid}. "
+                    f"利用可能な化学種: {all_species}. 指定を見直してください.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                raise ValueError(
+                    f"微分方程式に現れない化学種が指定されました: {invalid}. "
+                    f"利用可能: {all_species}"
+                )
+            plot_species = list(species)
+
+        # プロットする (名前, 解のインデックス) のリスト
+        name_to_idx = {name: i for i, name in enumerate(all_species)}
+        plot_items = [(name, name_to_idx[name]) for name in plot_species]
+
         print("\n=== Time-course plot ===")
         plt.figure(figsize=(12, 8))
         ax = plt.gca()
 
-        for i, species_name in enumerate(unique_species):
+        # 解の時間範囲（expdata_df 指定時に軸をここに合わせ、実線が圧縮されないようにする）
+        t_sol_min, t_sol_max = float(sol.t.min()), float(sol.t.max())
+
+        for species_name, i in plot_items:
             line, = ax.plot(sol.t, sol.y[i], label=species_name, linewidth=2)
             color = line.get_color()
             if expdata_df is not None and species_name in expdata_df.columns:
@@ -198,6 +234,10 @@ class RxnODEsolver:
                     color=color, marker='o', s=50, zorder=5, edgecolors='white'
                 )
 
+        # expdata_df 指定時は x 軸を解の時間範囲に合わせ、モデル曲線が確実に視認できるようにする
+        if expdata_df is not None:
+            ax.set_xlim(t_sol_min, t_sol_max)
+
         plt.xlabel('Time (s)', fontsize=12)
         plt.ylabel('Concentration', fontsize=12)
         plt.title('Chemical Reaction Kinetics - Sample Data', fontsize=14)
@@ -206,10 +246,7 @@ class RxnODEsolver:
         plt.tight_layout()
         plt.show()
 
-        # 最終時刻での濃度を表示
+        # 描画した化学種についてのみ、最終時刻での濃度を表示
         print("\n=== Concentration at the final time point ===")
-        final_concentrations = {
-            name: conc[-1] for name, conc in zip(unique_species, sol.y)
-        }
-        for name, conc in final_concentrations.items():
-            print(f"{name}: {conc:.6f}")
+        for name, i in plot_items:
+            print(f"{name}: {sol.y[i][-1]:.6f}")

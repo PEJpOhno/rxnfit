@@ -22,6 +22,11 @@ def get_reactions(file_path, encoding=None):
     pairs of columns for product coefficient and product name. The "+"
     symbols in the CSV are ignored.
 
+    Rate constant column (k):
+        - Empty: replaced by 'k' + RID (e.g. 'k2' for RID 2).
+        - Numeric string (e.g. "0.04"): converted to float.
+        - Other string: kept as-is (expression like "k1*2" or symbol name).
+
     Args:
         file_path (str): The path to the CSV file containing the reaction
             formulas.
@@ -31,14 +36,11 @@ def get_reactions(file_path, encoding=None):
     Returns:
         list: A list of lists, where each inner list represents a reaction
             and contains:
-            - A list with the reaction ID and rate constant (as a float).
-            - A list of lists, where each inner list contains the
-              coefficient (as a string) and the name (as a string) of a
-              reactant.
-            - A list of lists, where each inner list contains the
-              coefficient (as a string) and the name (as a string) of a
-              product.
-            - A list of strings representing the conditions.
+            - A list [reaction_id, rate_constant] where rate_constant is
+              float, or str (e.g. 'k2' for empty, or expression like 'k1*2').
+            - A list of [coefficient, name] for each reactant.
+            - A list of [coefficient, name] for each product.
+            - A list of condition strings.
     """
     if encoding is None:
         encoding = 'utf-8'
@@ -176,7 +178,7 @@ def to_chempy_style(reaction):
 
 def reactant_consumption(reaction_equation):
     """Generate rate law equations for reactant consumption.
-    
+
     The rate law equations and coefficients are determined as follows.
     For a reaction aA + bB -> cC + dD:
     -d[A]/dt = k * A^a * B^b
@@ -187,7 +189,7 @@ def reactant_consumption(reaction_equation):
     Args:
         reaction_equation (list): A list representing a reaction equation
             in the format [['ID', rate_constant], [[coeff, reactant1], ...],
-            [[coeff, product1], ...]].
+            [[coeff, product1], ...]]. rate_constant may be float or str.
 
     Returns:
         list: The input reaction_equation list extended with:
@@ -220,18 +222,18 @@ def reactant_consumption(reaction_equation):
 
 def generate_ode(reaction):
     """Generate ODE expressions for a single reaction.
-    
+
     This function is used internally by 'generate_sys_ode' to process
     individual reactions and generate differential equation expressions
     for each chemical species involved in the reaction.
-    
+
     Args:
         reaction (list): A list representing a reaction equation in the
-            format [['ID', rate_constant], [[coeff, reactant1], ...],
-            [[coeff, product1], ...], conditions,
+            format [['ID', rate_constant], reactants, products, conditions,
             [rate_law_string, [reactant_coeffs], [product_coeffs]]].
-            The reaction must have at least 5 elements.
-        
+            rate_constant may be float or str. The reaction must have
+            at least 5 elements.
+
     Returns:
         defaultdict: A dictionary mapping species names (str) to their ODE
             expression strings. Reactants contribute negative terms, products
@@ -271,10 +273,10 @@ def generate_ode(reaction):
 
 def generate_sys_ode(reactant_eq):
     """Generate system of ODEs from reactant equations.
-    
+
     Args:
         reactant_eq (list): A list of reactant equations.
-        
+
     Returns:
         dict: A dictionary containing the system of ODEs.
     """
@@ -293,13 +295,18 @@ def generate_sys_ode(reactant_eq):
 
 def rate_constants(reactant_eq):
     """Extract rate constants from reactant equations.
-    
+
+    Each key is 'k' + reaction ID. Values are float when the rate constant
+    cell was numeric; otherwise the raw string (e.g. 'k2', 'k1*2') is kept.
+
     Args:
-        reactant_eq (list): A list of reactant equations.
-        
+        reactant_eq (list): A list of reactant equations (output of
+            reactant_consumption for each reaction from get_reactions).
+
     Returns:
-        dict: A dictionary mapping rate constant keys to their values
-            (float or raw string for expressions/symbols).
+        dict: Mapping from rate constant key (e.g. 'k1', 'k2') to float or
+            str. String values are used later for symbol or expression
+            parsing in _build_rate_consts_sympy.
     """
     rate_consts_dict = {}
     for e in reactant_eq:
@@ -314,22 +321,25 @@ def rate_constants(reactant_eq):
 
 def _build_rate_consts_sympy(raw_rate_consts):
     """Convert raw rate constants to SymPy values (float, Symbol, or Expr).
-    
+
     - float: kept as is.
-    - string: parsed as expression (e.g. "k1*2"); if that fails or is a
-      single identifier, treated as a symbol. Symbols in the expression
-      must be in the set of rate constant keys (allowed_keys); otherwise
-      ValueError is raised.
-    
+    - str: parsed as a SymPy expression (e.g. "k1*2"). If parsing yields
+      a single symbol or parsing fails, the value is treated as a Symbol.
+      All symbols appearing in expressions must be among the rate constant
+      keys (allowed_keys); otherwise ValueError is raised.
+
     Args:
         raw_rate_consts (dict): Output of rate_constants(reactant_eq).
-        
+            Keys are rate constant names (e.g. 'k1', 'k2'); values are
+            float or str.
+
     Returns:
-        dict: rate_consts_dict with values as float, Symbol, or SymPy Expr.
-        
+        dict: Same keys as raw_rate_consts. Values are float, sympy.Symbol,
+            or a SymPy expression (e.g. 2*k1 for "k1*2").
+
     Raises:
         ValueError: If an expression references a rate constant not in
-            the reaction set (e.g. "k99" when only k1, k2 exist).
+            the reaction set (e.g. "k99*2" when only k1, k2 exist).
     """
     allowed_keys = set(raw_rate_consts.keys())
     sym_dict = {k: Symbol(k) for k in allowed_keys}
@@ -360,39 +370,36 @@ def _build_rate_consts_sympy(raw_rate_consts):
 
 
 class RxnToODE:
-    """A class for converting reaction equations from CSV files to ODE systems.
-    
-    This class reads chemical reaction data from CSV files and converts them
-    into systems of ordinary differential equations using SymPy.
-    
+    """Convert reaction equations from CSV files to ODE systems.
+
+    Reads chemical reaction data from CSV and builds systems of ordinary
+    differential equations using SymPy. Rate constants may be numeric,
+    symbolic, or given by expressions (e.g. k2 = k1*2).
+
     Attributes:
-        file_path (str): The path to the CSV file containing reaction data.
-        reactant_eq (list): A list of reactant equations generated from
-            the file.
-        t (Symbol): SymPy symbol for time variable.
-        function_names (list): List of chemical species names extracted
-            from reactions.
-        functions_dict (dict): Dictionary mapping species names to SymPy
-            functions.
-        rate_consts_dict (dict): Dictionary of rate constants extracted
-            from reactions.
-        sympy_symbol_dict (dict): Dictionary of SymPy symbols and
-            functions.
-        sys_odes_dict (dict): Dictionary of ODE expressions.
+        file_path (str): Path to the CSV file containing reaction data.
+        reactant_eq (list): List of reactant equations from the file.
+        t (Symbol): SymPy symbol for time.
+        function_names (list): Chemical species names in appearance order.
+        functions_dict (dict): Species names to SymPy Function objects.
+        rate_consts_dict (dict): Rate constant key to float, Symbol, or
+            SymPy Expr (e.g. 2*k1 for constraint k2=k1*2).
+        sympy_symbol_dict (dict): Combined dict of t, Derivative,
+            rate_consts_dict, and functions_dict for parsing ODEs.
+        sys_odes_dict (dict): Species name to ODE right-hand side string.
     """
-    
+
     def __init__(self, file_path, encoding=None):
-        """Initialize the RxnToODE class.
-        
+        """Initialize from a reaction CSV file.
+
         Args:
-            file_path (str): The path to the CSV file containing reaction
-                data.
-            encoding (str, optional): The encoding of the CSV file.
-                Defaults to 'utf-8' if None.
+            file_path (str): Path to the CSV file containing reaction data.
+            encoding (str, optional): File encoding. Defaults to 'utf-8'
+                if None.
         """
         self.file_path = file_path
         self.encoding = encoding if encoding else 'utf-8'
-        
+
         # ファイルから反応式を読み込み、reactant_eqを生成
         reaction_equations = get_reactions(file_path, self.encoding)
         self.reactant_eq = [
@@ -407,20 +414,20 @@ class RxnToODE:
         )
         raw_rate_consts = rate_constants(self.reactant_eq)
         self.rate_consts_dict = _build_rate_consts_sympy(raw_rate_consts)
-        
+
         # 文字列内で使用するシンボル、関数、定数を統合
         self.sympy_symbol_dict = {'t': self.t, 'Derivative': Derivative}
         self.sympy_symbol_dict.update(self.rate_consts_dict)
         self.sympy_symbol_dict.update(self.functions_dict)
-        
+
         # 方程式を構築
         self.sys_odes_dict = generate_sys_ode(self.reactant_eq)
     
     def get_equations(self):
-        """Generate the system of SymPy equations.
-        
+        """Build the system of SymPy equations for the ODEs.
+
         Returns:
-            list: List of SymPy equations representing the ODE system.
+            list: List of sympy.Eq (lhs = Derivative(species(t), t), rhs expr).
         """
         system_of_equations = []
         for key in self.sys_odes_dict.keys():
@@ -432,12 +439,12 @@ class RxnToODE:
             eq = Eq(lhs, rhs_expr)
             system_of_equations.append(eq)
         return system_of_equations
-    
+
     def create_ode_system(self):
-        """Create ODE system expressions for symbolic manipulation.
-        
+        """Build ODE right-hand side expressions (SymPy) per species.
+
         Returns:
-            dict: Dictionary mapping species names to ODE expressions.
+            dict: Species name -> SymPy expression for d(species)/dt.
         """
         ode_expressions = {}
         for key in self.sys_odes_dict.keys():
@@ -447,3 +454,4 @@ class RxnToODE:
             )
             ode_expressions[key] = rhs_expr
         return ode_expressions
+
