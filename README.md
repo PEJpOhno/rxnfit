@@ -55,8 +55,8 @@ example of a csv format
 1) 桜田一郎; 坂口康義; 大村恭弘. [11] 数種の水溶性高分子酢酸エステルの加水分解速度. 高分子化學, 1970, 27.297: 89-96.  https://doi.org/10.1295/koron1944.27.89  
 2) 永井俊. 物理化学実験 「酢酸エステルの加水分解速度測定」 の問題点と改良法. 日本医科大学基礎科学紀要= The Bulletin of liberal arts & sciences, Nippon Medical School/日本医科大学基礎科学紀要編集委員会 編, 2015, 44: 1-24.  https://www.nms.ac.jp/library/college/pdf/kenkyujoho/katsudo/kiyou/no44/44thebulletin_takashi_nagai.pdf  
 3) Kentaro TAMAKI, Seiichi YADA, Shiro KUDO, Reaction of 3- (1-Naphthyloxy) -2-hydroxy-1-propyltosylate with Isopropylamine, Journal of Synthetic Organic Chemistry, Japan, 1972, Volume 30, Issue 2, Pages 175-178, Released on J-STAGE November 13, 2009, Online ISSN 1883-6526, Print ISSN 0037-9980, https://doi.org/10.5059/yukigoseikyokaishi.30.175, https://www.jstage.jst.go.jp/article/yukigoseikyokaishi1943/30/2/30_2_175/_article/-char/en  
-4) Tutomu SUZUKI, Isao IWAMOTO, Sadao SUZUKI, The Kinetics of the Formation and the Decomposition of Peracetic Acid, Nippon kagaku zassi, 1962, Volume 83, Issue 11, Pages 1212-1215,A78, Released on J-STAGE May 30, 2011, Online ISSN 2185-0917, Print ISSN 0369-5387,  
-https://doi.org/10.1246/nikkashi1948.83.11_1212, https://www.jstage.jst.go.jp/article/nikkashi1948/83/11/83_11_1212/_article/-char/en  
+4) Tutomu SUZUKI, Kazuhiro SUYAMA, Sadao SUZUKI, The Kinetics of the Formation and the Decomposition of Mono-chloro Peracetic Acid, Nippon kagaku zassi, 1964, Volume 85, Issue 11, Pages 802-805,A61, Released on J-STAGE May 30, 2011, Online ISSN 2185-0917, Print ISSN 0369-5387, https://doi.org/10.1246/nikkashi1948.85.11_802,  
+https://www.jstage.jst.go.jp/article/nikkashi1948/85/11/85_11_802/_article/-char/en  
 
 Future worls: 初期濃度を変化させる事例  
 https://doi.org/10.1002/ange.201609757  
