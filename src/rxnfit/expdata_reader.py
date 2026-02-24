@@ -8,9 +8,11 @@
 
 Experimental data is passed as a list of DataFrames and returned as a list
 of (t_list, C_exp_list) tuples. Functions handle missing values and align
-data to ODE function names order.
+data to ODE function names order. Time column (0th column) unit and
+consistency across DataFrames are also provided.
 """
 
+import warnings
 import pandas as pd
 
 
@@ -79,6 +81,46 @@ def expdata_read(df_list):
         datasets.append((t_list, C_exp_list))
 
     return datasets
+
+
+def get_time_unit_from_expdata(df_list):
+    """Get time axis unit from the 0th column name and check consistency.
+
+    The unit is derived from the first column name: if it contains '_',
+    the part after the last '_' is used (e.g. "t_s" -> "s"); otherwise
+    the full column name is used. When multiple DataFrames are given,
+    their 0th column names must match; otherwise a warning is emitted
+    and the first DataFrame's column is used.
+
+    Args:
+        df_list (list[pandas.DataFrame]): List of DataFrames with time
+            in the first column. Can be a single DataFrame (wrapped in a list).
+
+    Returns:
+        str or None: The time unit string (e.g. "s", "min", "hr"), or None
+            if df_list is empty.
+
+    Raises:
+        ValueError: If df_list is empty.
+    """
+    if not df_list:
+        raise ValueError("df_list cannot be empty.")
+
+    names_0 = [df.columns[0] for df in df_list]
+    if len(set(names_0)) > 1:
+        warnings.warn(
+            f"経時変化データの0列目（時間列）の列名が一致しません: {names_0}. "
+            "先頭のDataFrameの列名を用います。",
+            UserWarning,
+            stacklevel=2,
+        )
+    time_col_name = names_0[0]
+    unit = (
+        time_col_name.split("_")[-1]
+        if "_" in str(time_col_name)
+        else time_col_name
+    )
+    return unit
 
 
 def get_t0_from_expdata(df_list):

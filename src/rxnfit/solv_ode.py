@@ -10,16 +10,18 @@ based on reaction rate equations with all rate constants known.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Union
 import sys
 import warnings
 from sympy import Basic as SympyBasic
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
 from .build_ode import RxnODEbuild, create_system_rhs
+from .expdata_reader import get_time_unit_from_expdata
 
 
 @dataclass
@@ -151,7 +153,12 @@ class RxnODEsolver:
         return ode_construct, solution
 
     # 結果をプロット
-    def solution_plot(self, solution=None, expdata_df=None, species: Optional[List[str]] = None):
+    def solution_plot(
+        self,
+        solution=None,
+        expdata_df: Optional[Union[pd.DataFrame, List[pd.DataFrame]]] = None,
+        species: Optional[List[str]] = None,
+    ):
         """Plot the time evolution of chemical species.
         
         Creates a time-course plot showing the simulated concentration of
@@ -163,18 +170,18 @@ class RxnODEsolver:
             solution (scipy.integrate.OdeResult, optional): Solution
                 object from solve_ivp to plot. If None, uses the solution
                 stored internally from solve_system(). Defaults to None.
-            expdata_df (pandas.DataFrame, optional): Experimental data
-                for overlay. DataFrame format:
-                - First column: time values.
+            expdata_df (pandas.DataFrame or list of DataFrame, optional):
+                Experimental data for overlay. Can be a single DataFrame or
+                a list of DataFrames (e.g. from multiple CSVs). Format:
+                - First column: time values (column name used for x-axis
+                  label unit, e.g. "t_s" -> "Time (s)").
                 - Subsequent columns: concentrations for each species.
                 - Column names must match species names (e.g. from
                   self.builder.function_names).
-                If provided, scatter points are drawn for each species
-                with the same color as the corresponding simulation line.
-                Missing values (NaN) are skipped. When provided, the x-axis
-                is set to the solution time range so the model curve is
-                not compressed when experimental data has a wider range.
-                Defaults to None.
+                If a list is passed, the 0th column name must be identical
+                across all DataFrames; otherwise a warning is emitted.
+                Scatter points and x-axis range/label are derived from
+                the first DataFrame when a list is given. Defaults to None.
             species (list[str], optional): List of species names to plot.
                 If None, all species in the ODE system are plotted.
                 If provided, only these species are drawn. Any name not
@@ -215,30 +222,40 @@ class RxnODEsolver:
         name_to_idx = {name: i for i, name in enumerate(all_species)}
         plot_items = [(name, name_to_idx[name]) for name in plot_species]
 
+        # expdata_df を正規化し、単位は expdata_reader で取得・不一致時はそこで警告
+        plot_df = None
+        time_unit = None
+        if expdata_df is not None:
+            df_list = expdata_df if isinstance(expdata_df, list) else [expdata_df]
+            plot_df = df_list[0]
+            time_unit = get_time_unit_from_expdata(df_list)
+
         print("\n=== Time-course plot ===")
         plt.figure(figsize=(12, 8))
         ax = plt.gca()
 
-        # 解の時間範囲（expdata_df 指定時に軸をここに合わせ、実線が圧縮されないようにする）
+        # 解の時間範囲（実験データあり時に軸をここに合わせ、実線が圧縮されないようにする）
         t_sol_min, t_sol_max = float(sol.t.min()), float(sol.t.max())
 
         for species_name, i in plot_items:
             line, = ax.plot(sol.t, sol.y[i], label=species_name, linewidth=2)
             color = line.get_color()
-            if expdata_df is not None and species_name in expdata_df.columns:
-                t_exp = expdata_df.iloc[:, 0].to_numpy()
-                c_exp = expdata_df[species_name].to_numpy()
+            if plot_df is not None and species_name in plot_df.columns:
+                t_exp = plot_df.iloc[:, 0].to_numpy()
+                c_exp = plot_df[species_name].to_numpy()
                 mask = ~np.isnan(c_exp)
                 ax.scatter(
                     t_exp[mask], c_exp[mask],
                     color=color, marker='o', s=50, zorder=5, edgecolors='white'
                 )
 
-        # expdata_df 指定時は x 軸を解の時間範囲に合わせ、モデル曲線が確実に視認できるようにする
-        if expdata_df is not None:
+        # 実験データあり時は x 軸を解の時間範囲に合わせ、モデル曲線が確実に視認できるようにする
+        if plot_df is not None:
             ax.set_xlim(t_sol_min, t_sol_max)
 
-        plt.xlabel('Time (s)', fontsize=12)
+        # 横軸ラベル: expdata_reader で取得した単位を使う。データがなければ "Time ()"
+        xlabel = f"Time ({time_unit})" if time_unit is not None else "Time ()"
+        plt.xlabel(xlabel, fontsize=12)
         plt.ylabel('Concentration', fontsize=12)
         plt.title('Chemical Reaction Kinetics - Sample Data', fontsize=14)
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
