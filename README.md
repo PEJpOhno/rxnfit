@@ -46,33 +46,3 @@ example of a csv format
 | build_ode.py | RxnODEbuild | Convert symbolic  differential equations (ODEs; sympy) to numerical one (scipy). |
  solve_ode.py | solves numerical ODEs and plot the result. |
 
-
-
-
-
-
-## References  
-Future worls: 初期濃度を変化させる事例  
-https://doi.org/10.1002/ange.201609757  
-https://doi.org/10.1039/C8SC04698K  
-https://doi.org/10.1039/D4DD00111G  
-
-
-## THIRD-PARTY LICENSES
-
-This software includes the following third-party libraries:
-
----
-
-Library: Python
-Website: https://www.python.org/
-License: Python Software Foundation License Version 2
-Copyright © 2001–2025 Python Software Foundation
-
----
-
-Library: NumPy
-Website: https://numpy.org/
-License: BSD 3-Clause License
-Copyright (c) 2005–2025, NumPy Developers
-

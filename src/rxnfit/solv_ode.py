@@ -152,7 +152,157 @@ class RxnODEsolver:
         self.solution = solution
         return ode_construct, solution
 
-    # 結果をプロット
+    def to_dataframe(self, solution=None, time_column_name="time"):
+        """Return the solution as a DataFrame (time as rows, species as columns).
+
+        Args:
+            solution (scipy.integrate.OdeResult, optional): Solution to
+                convert. If None, uses the solution from solve_system().
+                Defaults to None.
+            time_column_name (str, optional): Name of the time column
+                (first column). Defaults to "time".
+
+        Returns:
+            pandas.DataFrame: One row per time point; first column is time,
+                following columns are species concentrations (names from
+                function_names).
+
+        Raises:
+            RuntimeError: If no solution is available (solve_system not run).
+        """
+        sol = solution if solution is not None else self.solution
+        if sol is None:
+            raise RuntimeError(
+                "No solution available. Call solve_system() first."
+            )
+        names = self.builder.function_names
+        data = {time_column_name: sol.t}
+        for i, name in enumerate(names):
+            data[name] = sol.y[i]
+        return pd.DataFrame(data)
+
+    def rsq(self, expdata_df, solution=None, verbose=True, recompute=True):
+        """Compute the sum of squared residuals at experimental time points.
+
+        When recompute=True (default), re-integrates the ODE at the valid
+        experimental time points and returns the sum of (observed - model)^2.
+        When recompute=False, interpolates the existing solution at
+        experimental times to compute the residual. NaNs in the data are
+        excluded. Output format matches expdata_fit_sci.run_fit.
+
+        Args:
+            expdata_df (pandas.DataFrame): Time-course data. First column
+                is time; remaining columns are species concentrations.
+                Column names must match function_names.
+            solution (scipy.integrate.OdeResult, optional): Solution to use
+                when recompute=False. If None, uses the result of
+                solve_system(). Defaults to None.
+            verbose (bool, optional): If True, print the residual sum of
+                squares. Defaults to True.
+            recompute (bool, optional): If True, re-integrate at
+                experimental times to compute residuals. If False, use
+                interpolation. Defaults to True.
+
+        Returns:
+            float: Sum of squared residuals.
+
+        Raises:
+            RuntimeError: If no solution is available, or if recompute=True
+                but solve_system() has not been called.
+        """
+        if recompute:
+            if self.ode_construct is None:
+                raise RuntimeError(
+                    "recompute=True requires solve_system() to be called first."
+                )
+            (
+                _,
+                _,
+                ode_system,
+                function_names,
+                _,
+            ) = self.ode_construct
+            system_rhs = create_system_rhs(ode_system, function_names)
+            t_col = expdata_df.iloc[:, 0].dropna()
+            if len(t_col) == 0:
+                raise RuntimeError(
+                    "No valid time points in the experimental data."
+                )
+            t_eval = np.sort(np.unique(t_col.to_numpy()))
+            try:
+                sol_new = solve_ivp(
+                    system_rhs,
+                    self.config.t_span,
+                    self.config.y0,
+                    t_eval=t_eval,
+                    method=self.config.method,
+                    rtol=self.config.rtol,
+                )
+                if not sol_new.success:
+                    raise RuntimeError(
+                        sol_new.message or "Integration failed."
+                    )
+            except Exception as e:
+                warnings.warn(
+                    f"Re-integration at experimental times failed ({e}). "
+                    "Computing residual by interpolation.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                return self._rsq_interp(expdata_df, solution, verbose)
+            time_to_idx = {float(t): idx for idx, t in enumerate(sol_new.t)}
+            names = self.builder.function_names
+            name_to_idx = {name: i for i, name in enumerate(names)}
+            rss = 0.0
+            for col in expdata_df.columns[1:]:
+                if col not in name_to_idx:
+                    continue
+                i = name_to_idx[col]
+                c_exp = expdata_df[col].to_numpy()
+                for j in range(len(expdata_df)):
+                    t_j = expdata_df.iloc[j, 0]
+                    if pd.isna(t_j) or np.isnan(c_exp[j]):
+                        continue
+                    t_j = float(t_j)
+                    idx = time_to_idx[t_j]
+                    rss += (c_exp[j] - sol_new.y[i][idx]) ** 2
+            if verbose:
+                print(f"Residual sum of squares: {rss:.6g}")
+            return float(rss)
+
+        return self._rsq_interp(expdata_df, solution, verbose)
+
+    def _rsq_interp(self, expdata_df, solution=None, verbose=True):
+        """Compute sum of squared residuals by interpolating the solution.
+
+        Used when rsq is called with recompute=False.
+        """
+        sol = solution if solution is not None else self.solution
+        if sol is None:
+            raise RuntimeError(
+                "No solution available. Call solve_system() first."
+            )
+        t_exp = expdata_df.iloc[:, 0].to_numpy()
+        names = self.builder.function_names
+        name_to_idx = {name: i for i, name in enumerate(names)}
+        rss = 0.0
+        for col in expdata_df.columns[1:]:
+            if col not in name_to_idx:
+                continue
+            i = name_to_idx[col]
+            c_exp = expdata_df[col].to_numpy()
+            mask = ~np.isnan(c_exp)
+            if not np.any(mask):
+                continue
+            t_m = t_exp[mask]
+            c_m = c_exp[mask]
+            c_model = np.interp(t_m, sol.t, sol.y[i])
+            rss += np.sum((c_m - c_model) ** 2)
+        if verbose:
+            print(f"Residual sum of squares: {rss:.6g}")
+        return float(rss)
+
+    # Plot results
     def solution_plot(
         self,
         solution=None,
@@ -207,14 +357,14 @@ class RxnODEsolver:
             invalid = [s for s in species if s not in all_species]
             if invalid:
                 warnings.warn(
-                    f"次の化学種は微分方程式に現れません: {invalid}. "
-                    f"利用可能な化学種: {all_species}. 指定を見直してください.",
+                    f"Species not in the ODE system: {invalid}. "
+                    f"Available: {all_species}. Please check the argument.",
                     UserWarning,
                     stacklevel=2,
                 )
                 raise ValueError(
-                    f"微分方程式に現れない化学種が指定されました: {invalid}. "
-                    f"利用可能: {all_species}"
+                    f"Species not in the ODE system: {invalid}. "
+                    f"Available: {all_species}"
                 )
             plot_species = list(species)
 

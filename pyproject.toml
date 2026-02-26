@@ -10,26 +10,29 @@ authors = [
 ]
 description = "set up theoretical reaction kinetics equations"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent", 
     "License :: OSI Approved :: BSD License"
 ]
 license = "BSD-3-Clause"
-license-files = ["LICEN[CS]E*"]
+license-files = ["LICENSE*"]
 
 dependencies = [
-    "numpy >= 1.26.0", 
-    "pandas >= 2.2.0", 
-    "scipy >= 1.12.0", 
-    "sympy >= 1.12",  
-    "matplotlib >= 3.8.0"
+    "numpy >= 2.1.0",
+    "pandas >= 2.2.3",
+    "scipy >= 1.14.1",
+    "sympy >= 1.12",
+    "matplotlib >= 3.9.0",
 ]
 
 [tool.hatch.version]
 path = "src/rxnfit/_version.py"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/rxnfit"]
+
 [project.urls]
-Homepage = "https://github.com/PEJpOhno/rxnfit.git"
+Homepage = "https://github.com/PEJpOhno/rxnfit"
 Issues = "https://github.com/PEJpOhno/rxnfit/issues"
