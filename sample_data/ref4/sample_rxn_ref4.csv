@@ -1,0 +1,5 @@
+﻿RID,k,,,,,,,,,,,,
+1,,,ClCH2COOH,+,,H2O2,>,>,,ClCH2COOOH,+,,H2O
+2,,,ClCH2COOOH,+,,H2O,>,>,,ClCH2COOH,+,,H2O2
+3,,,ClCH2COOOH,,,,>,>,,ClCH2COOH,+,0.5,O2
+4,,,H2O2,>,>,,H2O,0.5,O2,,,,
