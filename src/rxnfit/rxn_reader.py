@@ -5,7 +5,9 @@
 # 08/30/2025, M. Ohno
 
 import csv
+import io
 from collections import defaultdict
+from urllib.request import urlopen
 
 from sympy import Symbol, symbols, Function, Eq, Derivative
 from sympy.parsing.sympy_parser import parse_expr
@@ -22,14 +24,18 @@ def get_reactions(file_path, encoding=None):
     pairs of columns for product coefficient and product name. The "+"
     symbols in the CSV are ignored.
 
+    file_path may be a local path or a URL (http:// or https://). If it is
+    a URL, the content is fetched and parsed in memory.
+
     Rate constant column (k):
         - Empty: replaced by 'k' + RID (e.g. 'k2' for RID 2).
         - Numeric string (e.g. "0.04"): converted to float.
         - Other string: kept as-is (expression like "k1*2" or symbol name).
 
     Args:
-        file_path (str): The path to the CSV file containing the reaction
-            formulas.
+        file_path (str): Path or URL to the CSV file containing the reaction
+            formulas. If it starts with http:// or https://, the content
+            is fetched from the URL.
         encoding (str, optional): The encoding of the CSV file. Defaults to
             'utf-8' if None.
 
@@ -46,7 +52,14 @@ def get_reactions(file_path, encoding=None):
         encoding = 'utf-8'
     reaction_equations = []  # 素反応を格納するリスト
 
-    with open(file_path, mode='r', encoding=encoding) as file:
+    if file_path.strip().lower().startswith(('http://', 'https://')):
+        with urlopen(file_path) as resp:
+            text = resp.read().decode(encoding)
+        file = io.StringIO(text)
+    else:
+        file = open(file_path, mode='r', encoding=encoding)
+
+    try:
         reader = csv.reader(file)
         next(reader)  # ヘッダ行をスキップ
 
@@ -118,6 +131,9 @@ def get_reactions(file_path, encoding=None):
                 reaction_equations.append(
                     [ID_k, reactants, products, conditions]
                 )
+    finally:
+        if not isinstance(file, io.StringIO):
+            file.close()
 
     return reaction_equations
 

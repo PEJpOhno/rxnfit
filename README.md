@@ -3,8 +3,8 @@
 "rxnfit" is a Python module to set up theoretical reaction kinetics equations from reaction formulas and the rate constats provided as csv file.  
 
 ## 2. Current version and requirements  
-- current version = 0.0.2   
-- pyhon >=3.10  
+- current version = 0.1.0  
+- pyhon >=3.13  
 
 [dependencies]  
 - NumPy   
