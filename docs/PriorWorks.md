@@ -3,7 +3,7 @@
 |------|------|--------|
 | Neural ODE を化学反応速度論に適用し、stiff な化学反応 ODE を高速に解く ChemNODE を提案。PyTorch ベースで反応速度式の数値解と学習を統合。 | ChemNODE: A Neural Ordinary Differential Equations Approach for Chemical Kinetics Solvers（arXiv） | https://arxiv.org/abs/2101.04749 |
 | 反応速度式を損失関数に組み込み、濃度データから速度定数を推定する PINN（Physics-Informed Neural Network）実装。PyTorch を用いて N₂O₅ 分解反応の速度定数を学習。 | Physics-Informed Neural Network for Chemical Kinetics（GitHub） | https://github.com/shehanp-dev/Physics-Informed-Neural-Network-for-modelling-reaction-kinetics |
-| 化学反応速度論のニューラルネット近似を効率化するアーキテクチャを提案。PyTorch を用いて反応速度式の近似モデルを構築。 | Efficient neural network models of chemical kinetics（RSC Publishing） | https://pubs.rsc.org/en/content/articlelanding/2021/dd/d1dd00000a |  
+| 化学反応速度論のニューラルネット近似を効率化するアーキテクチャを提案。PyTorch を用いて反応速度式の近似モデルを構築。 | F. A. Döppel and M. Votsmeier , Efficient neural network models of chemical kinetics using a latent asinh rate transformation, React. Chem. Eng., 2023,  | https://doi.org/10.1039/D3RE00212H |  
 
 
 **実装例（GitHubなど）**  
