@@ -24,6 +24,7 @@ from .expdata_reader import (
     get_y0_from_expdata,
     align_expdata_to_function_names
 )
+from .rate_const_ft_eval import has_time_dependent_rates, build_evaluator
 
 
 def _eval_ode_fit(t, *params, fit_ctx):
@@ -121,14 +122,18 @@ def _compute_multi_residual(params, fit_ctx):
     method = fit_ctx['method']
     rtol = fit_ctx['rtol']
 
-    rate_const_values = dict(fixed_rate_consts)
-    for i, key in enumerate(symbolic_rate_const_keys):
-        if i < len(params):
-            rate_const_values[key] = params[i]
-        else:
-            raise ValueError(
-                f"パラメータが不足しています。速度定数 {key} の値が必要です。"
-            )
+    if 'evaluator' in fit_ctx:
+        evaluator = fit_ctx['evaluator']
+        rate_const_values = lambda t: evaluator(t, params)
+    else:
+        rate_const_values = dict(fixed_rate_consts)
+        for i, key in enumerate(symbolic_rate_const_keys):
+            if i < len(params):
+                rate_const_values[key] = params[i]
+            else:
+                raise ValueError(
+                    f"パラメータが不足しています。速度定数 {key} の値が必要です。"
+                )
 
     system_rhs = create_system_rhs(
         ode_functions_with_rate_consts,
@@ -292,14 +297,13 @@ def solve_fit_model_multi(
 
     fixed_rate_consts = {
         key: val for key, val in rate_consts_dict.items()
-        if not isinstance(val, (Symbol, SympySymbol))
+        if isinstance(val, (int, float))
     }
-
     # データセットの読み込みと整列
     datasets_raw = expdata_read(df_list)
     y0_list = get_y0_from_expdata(df_list, function_names)
-    t0_list = get_t0_from_expdata(df_list)  # 1行目の時間を積分の初期時刻に使用
-    columns = list(df_list[0].columns[1:])  # 化学種列のみ
+    t0_list = get_t0_from_expdata(df_list)
+    columns = list(df_list[0].columns[1:])
 
     datasets = []
     for (t_list, C_exp_list), y0, t0 in zip(datasets_raw, y0_list, t0_list):
@@ -320,6 +324,13 @@ def solve_fit_model_multi(
         'method': method,
         'rtol': rtol,
     }
+    if has_time_dependent_rates(rate_consts_dict):
+        fit_ctx['evaluator'] = build_evaluator(
+            rate_consts_dict,
+            symbolic_rate_const_keys,
+            fixed_rate_consts,
+        )
+
     residual_func = functools.partial(_compute_multi_residual, fit_ctx=fit_ctx)
 
     param_info = {
@@ -423,7 +434,10 @@ class ExpDataFitSci:
         """Get kwargs for SolverConfig for use with RxnODEsolver.
 
         Use after run_fit. Provides y0, t_span, method, rtol for
-        the specified dataset.
+        the specified dataset. When the model has time-dependent rate
+        constants k(t), also adds rate_const_values (callable) and
+        symbolic_rate_const_keys; in that case run_fit() must have been
+        called first.
 
         Args:
             dataset_index (int, optional): Index of dataset for y0.
@@ -431,21 +445,44 @@ class ExpDataFitSci:
 
         Returns:
             dict: Keyword args for SolverConfig:
-                y0, t_span, method, rtol.
+                y0, t_span, method, rtol, and optionally
+                rate_const_values, symbolic_rate_const_keys when k(t) present.
 
         Raises:
-            RuntimeError: If run_fit has not been called.
+            RuntimeError: If run_fit has not been called, or if the model
+                has k(t) and run_fit has not been called (with message
+                asking to call get_solver_config_args() only after run_fit()).
         """
         if self._param_info is None:
             raise RuntimeError("run_fit を先に実行してください。")
         y0 = self._param_info['y0_list'][dataset_index]
         t0 = self._param_info['t0_list'][dataset_index]
-        return {
+        out = {
             'y0': y0,
             't_span': (t0, self.t_range[1]),
             'method': self.method,
             'rtol': self.rtol,
         }
+        if has_time_dependent_rates(self.builded_rxnode.rate_consts_dict):
+            if self._result is None:
+                raise RuntimeError(
+                    "For models with time-dependent rate constants k(t), "
+                    "call get_solver_config_args() only after run_fit(). "
+                    "Speed constant information could not be set on "
+                    "SolverConfig because run_fit() has not been run yet."
+                )
+            fixed_rate_consts = {
+                k: float(v) for k, v in self.builded_rxnode.rate_consts_dict.items()
+                if isinstance(v, (int, float))
+            }
+            evaluator = build_evaluator(
+                self.builded_rxnode.rate_consts_dict,
+                self._param_info['symbolic_rate_consts'],
+                fixed_rate_consts,
+            )
+            out['rate_const_values'] = lambda t: evaluator(t, self._result.x)
+            out['symbolic_rate_const_keys'] = self._param_info['symbolic_rate_consts']
+        return out
 
     def get_fitted_rate_const_dict(self, result=None):
         """Get dict of fitted rate constants for builder.rate_consts_dict.

@@ -4,11 +4,85 @@
 
 # 08/30/2025, M. Ohno
 
+import csv
+
 from sympy import Function, Symbol, symbols, parse_expr, lambdify
 from sympy.core.symbol import Symbol as SympySymbol
 import inspect
 
 from .rxn_reader import RxnToODE
+
+
+def _load_rate_const_overrides_csv(file_path, encoding, allowed_keys):
+    """Load rate constant overrides from a CSV with columns 'k' and 'f(t)'.
+
+    Specification:
+    - First row must be header exactly "k" and "f(t)".
+    - Lines starting with # are not allowed (error).
+    - Empty rows (both columns empty) are ignored.
+    - Duplicate k in data rows raises error.
+    - Row with empty f(t) is ignored (that k is not overridden).
+    - k must be in allowed_keys (keys from reaction CSV), else error.
+    - Only .csv path is supported.
+
+    Returns:
+        dict: k_name -> expression string. Keys are from data rows;
+              rows with empty f(t) are skipped.
+    """
+    if not file_path.lower().endswith('.csv'):
+        raise ValueError(
+            "rate_const_overrides as path supports only CSV files. "
+            f"Got: {file_path!r}"
+        )
+    with open(file_path, mode='r', encoding=encoding) as f:
+        reader = csv.reader(f)
+        try:
+            header = next(reader)
+        except StopIteration:
+            raise ValueError("Rate constant overrides CSV is empty.")
+        header = [c.strip() for c in header]
+        if header != ['k', 'f(t)']:
+            raise ValueError(
+                "Rate constant overrides CSV header must be exactly "
+                "'k' and 'f(t)'. Got: {!r}".format(header)
+            )
+        seen_k = set()
+        overrides = {}
+        for row in reader:
+            if len(row) < 2:
+                if not any(c.strip() for c in row):
+                    continue
+                raise ValueError(
+                    "Rate constant overrides CSV: row must have at least "
+                    "two columns. Got: {!r}".format(row)
+                )
+            k_col = row[0].strip()
+            ft_col = row[1].strip()
+            if k_col.startswith('#'):
+                raise ValueError(
+                    "Comment lines (# ...) are not allowed in rate constant "
+                    "overrides CSV."
+                )
+            if not k_col and not ft_col:
+                continue
+            if not k_col:
+                continue
+            if k_col not in allowed_keys:
+                raise ValueError(
+                    "Rate constant '{0}' in overrides CSV is not defined in "
+                    "the reaction CSV. Allowed: {1}.".format(
+                        k_col, sorted(allowed_keys)
+                    )
+                )
+            if k_col in seen_k:
+                raise ValueError(
+                    "Duplicate rate constant '{}' in overrides CSV.".format(k_col)
+                )
+            seen_k.add(k_col)
+            if not ft_col:
+                continue
+            overrides[k_col] = ft_col
+    return overrides
 
 
 def _resolve_rate_consts(rate_consts_dict):
@@ -72,16 +146,65 @@ class RxnODEbuild(RxnToODE):
         get_ode_info(debug_info=False): Print summary and optional debug.
     """
 
-    def __init__(self, file_path, encoding=None):
+    def __init__(self, file_path, encoding=None, rate_const_overrides=None,
+                 rate_const_overrides_encoding=None):
         """Initialize from a reaction CSV file.
 
         Args:
             file_path (str): Path to the CSV file containing reaction data.
-            encoding (str, optional): File encoding. Defaults to 'utf-8'
-                if None.
+            encoding (str, optional): File encoding for the reaction CSV.
+                Defaults to 'utf-8' if None.
+            rate_const_overrides (dict, str, or None, optional): Optional
+                overrides for rate constants. If None, no overrides are applied.
+                If dict, keys are rate constant names and values are expression
+                strings (e.g. "k1/4", "a*exp(-t)"). If str, path to a CSV file
+                with columns "k" and "f(t)" (see module doc/spec). Defaults to
+                None.
+            rate_const_overrides_encoding (str, optional): Encoding for
+                reading the overrides CSV when rate_const_overrides is a path.
+                Only used when rate_const_overrides is str. If None, the
+                reaction CSV encoding is used.
         """
-        # 親クラスの初期化を呼び出し
         super().__init__(file_path, encoding)
+
+        if rate_const_overrides is None:
+            return
+
+        allowed_keys = set(self.rate_consts_dict.keys())
+        if isinstance(rate_const_overrides, str):
+            enc = rate_const_overrides_encoding if rate_const_overrides_encoding is not None else self.encoding
+            overrides_dict = _load_rate_const_overrides_csv(
+                rate_const_overrides, enc, allowed_keys
+            )
+        elif isinstance(rate_const_overrides, dict):
+            for k in rate_const_overrides:
+                if k not in allowed_keys:
+                    raise ValueError(
+                        "Rate constant '{0}' in overrides is not defined in "
+                        "the reaction CSV. Allowed: {1}.".format(
+                            k, sorted(allowed_keys)
+                        )
+                    )
+            overrides_dict = rate_const_overrides
+        else:
+            raise TypeError(
+                "rate_const_overrides must be None, dict, or str (path). "
+                "Got: {!r}".format(type(rate_const_overrides))
+            )
+
+        for k_name, expr_str in overrides_dict.items():
+            expr_str = expr_str.strip()
+            if not expr_str:
+                continue
+            try:
+                parsed = parse_expr(expr_str, local_dict=self.sympy_symbol_dict)
+            except Exception as e:
+                raise ValueError(
+                    "Failed to parse expression for '{0}': {1!r}. "
+                    "Error: {2}".format(k_name, expr_str, e)
+                ) from e
+            self.rate_consts_dict[k_name] = parsed
+            self.sympy_symbol_dict[k_name] = parsed
 
     def create_ode_system(self):
         """Build numerical ODE right-hand side functions for integration.
@@ -148,15 +271,19 @@ class RxnODEbuild(RxnToODE):
         ode_functions = {}
 
         # フィッティングで変える速度定数＝式の右辺に現れるシンボルのみ（式で定義されたものは含めない）
+        # シンボル t は除外する（積分の独立変数としてのみ扱う）
         free_param_names = set()
         for key, val in self.rate_consts_dict.items():
             if isinstance(val, (int, float)):
                 continue
             if isinstance(val, (Symbol, SympySymbol)):
-                free_param_names.add(val.name)
+                if val.name != 't':
+                    free_param_names.add(val.name)
             else:
                 syms = getattr(val, 'free_symbols', [])
-                free_param_names.update(str(s) for s in syms)
+                for s in syms:
+                    if str(s) != 't':
+                        free_param_names.add(str(s))
         symbolic_rate_const_keys = sorted(free_param_names)
 
         # 引数の順序を明示的に定義（速度定数も含む）
@@ -291,8 +418,11 @@ def create_system_rhs(ode_functions_dict, function_names,
         ode_functions_dict (dict): Species name -> ODE function (as from
             create_ode_system or create_ode_system_with_rate_consts).
         function_names (list): Species names in the same order as y.
-        rate_const_values (dict, optional): Rate constant key -> numeric
-            value. Used when ODE functions expect rate constants as args.
+        rate_const_values (dict or callable, optional): Rate constant key -> numeric
+            value, or a callable (t) -> dict of rate constant values for
+            time-dependent rates. Used when ODE functions expect rate constants
+            as args. When callable, it is called with the current time t to
+            get the dict.
         symbolic_rate_const_keys (list, optional): Order of rate constant
             keys matching the ODE functions. Required if rate_const_values
             is provided.
@@ -324,8 +454,12 @@ def create_system_rhs(ode_functions_dict, function_names,
                     # 速度定数を動的に渡す場合
                     if (rate_const_values is not None and
                             symbolic_rate_const_keys is not None):
+                        if callable(rate_const_values):
+                            rate_vals = rate_const_values(t)
+                        else:
+                            rate_vals = rate_const_values
                         rate_const_args = [
-                            rate_const_values[key]
+                            rate_vals[key]
                             for key in symbolic_rate_const_keys
                         ]
                         args = [t] + list(y) + rate_const_args
