@@ -10,7 +10,7 @@ based on reaction rate equations with all rate constants known.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Callable, Dict
 import sys
 import warnings
 from sympy import Basic as SympyBasic
@@ -27,7 +27,7 @@ from .expdata_reader import get_time_unit_from_expdata
 @dataclass
 class SolverConfig:
     """Configuration parameters for the ODE solver.
-    
+
     Attributes:
         y0 (list): Initial concentrations for all species (required).
         t_span (tuple): Time span for integration as (t_start, t_end)
@@ -36,12 +36,22 @@ class SolverConfig:
             the solution. If None, the solver chooses the time points.
         method (str): Integration method to use. Defaults to "RK45".
         rtol (float): Relative tolerance for the solver. Defaults to 1e-6.
+        rate_const_values (Optional[Union[dict, Callable[[float], dict]]]):
+            When provided with symbolic_rate_const_keys, the solver uses the
+            rate-constants ODE path: either a dict of rate constant values, or
+            a callable (t) -> dict for time-dependent rates. Must be used
+            together with symbolic_rate_const_keys (both or neither).
+        symbolic_rate_const_keys (Optional[List[str]]): Order of rate constant
+            names passed to the ODE. Required when rate_const_values is set.
+            Both must be set or both omitted; otherwise an error is raised.
     """
     y0: list
     t_span: tuple
     t_eval: Optional[np.ndarray] = field(default=None)
     method: str = "RK45"
     rtol: float = 1e-6
+    rate_const_values: Optional[Union[Dict[str, float], Callable[[float], Dict[str, float]]]] = field(default=None)
+    symbolic_rate_const_keys: Optional[List[str]] = field(default=None)
 
 
 class RxnODEsolver:
@@ -71,6 +81,15 @@ class RxnODEsolver:
         Raises:
             SystemExit: If rate constants validation fails.
         """
+        # rate_const_values と symbolic_rate_const_keys は両方指定か両方省略
+        rcv = getattr(config, 'rate_const_values', None)
+        srck = getattr(config, 'symbolic_rate_const_keys', None)
+        if (rcv is None) != (srck is None):
+            raise ValueError(
+                "rate_const_values and symbolic_rate_const_keys must be "
+                "both set or both omitted; one alone is invalid."
+            )
+
         # 反応速度定数の型をチェック
         if not self._validate_rate_constants(builder.rate_consts_dict):
             print("reconfirm rate constants")
@@ -111,10 +130,12 @@ class RxnODEsolver:
 
     def solve_system(self):
         """Solve the ODE system numerically.
-        
+
         Performs numerical integration of the ODE system using scipy.solve_ivp.
         The solution is stored internally and also returned.
-        
+        When config has rate_const_values and symbolic_rate_const_keys set,
+        uses the rate-constants ODE path; otherwise uses the standard path.
+
         Returns:
             tuple: A tuple containing:
                 - ode_construct (tuple): ODE system construction data including
@@ -124,15 +145,25 @@ class RxnODEsolver:
                     scipy.solve_ivp containing time points and concentrations.
                     May be None if integration fails.
         """
-        # 数値積分に必要なオブジェクトを取得
-        ode_construct = self.builder.get_ode_system()
-        (system_of_equations, sympy_symbol_dict,
-         ode_system, function_names, rate_consts_dict) = ode_construct
+        rcv = getattr(self.config, 'rate_const_values', None)
+        srck = getattr(self.config, 'symbolic_rate_const_keys', None)
 
-        # 共通関数を使用して微分方程式の右辺を定義
-        system_rhs = create_system_rhs(ode_system, function_names)
+        if rcv is not None and srck is not None:
+            ode_system, symbolic_rate_const_keys = (
+                self.builder.create_ode_system_with_rate_consts()
+            )
+            system_rhs = create_system_rhs(
+                ode_system,
+                self.builder.function_names,
+                rate_const_values=rcv,
+                symbolic_rate_const_keys=srck,
+            )
+        else:
+            ode_construct = self.builder.get_ode_system()
+            (system_of_equations, sympy_symbol_dict,
+             ode_system, function_names, rate_consts_dict) = ode_construct
+            system_rhs = create_system_rhs(ode_system, function_names)
 
-        # 数値積分を実行
         solution = None
         try:
             solution = solve_ivp(
@@ -147,7 +178,16 @@ class RxnODEsolver:
             print(f"An error occurred during numerical integration.: {e}")
             print("Plz. review the debug info.")
 
-        # 結果を内部に保持
+        if rcv is not None and srck is not None:
+            ode_construct = (
+                self.builder.get_equations(),
+                self.builder.sympy_symbol_dict,
+                ode_system,
+                self.builder.function_names,
+                self.builder.rate_consts_dict,
+            )
+        else:
+            ode_construct = self.builder.get_ode_system()
         self.ode_construct = ode_construct
         self.solution = solution
         return ode_construct, solution
@@ -215,14 +255,25 @@ class RxnODEsolver:
                 raise RuntimeError(
                     "recompute=True requires solve_system() to be called first."
                 )
-            (
-                _,
-                _,
-                ode_system,
-                function_names,
-                _,
-            ) = self.ode_construct
-            system_rhs = create_system_rhs(ode_system, function_names)
+            rcv = getattr(self.config, 'rate_const_values', None)
+            srck = getattr(self.config, 'symbolic_rate_const_keys', None)
+            if rcv is not None and srck is not None:
+                ode_system, _ = self.builder.create_ode_system_with_rate_consts()
+                system_rhs = create_system_rhs(
+                    ode_system,
+                    self.builder.function_names,
+                    rate_const_values=rcv,
+                    symbolic_rate_const_keys=srck,
+                )
+            else:
+                (
+                    _,
+                    _,
+                    ode_system,
+                    function_names,
+                    _,
+                ) = self.ode_construct
+                system_rhs = create_system_rhs(ode_system, function_names)
             t_col = expdata_df.iloc[:, 0].dropna()
             if len(t_col) == 0:
                 raise RuntimeError(
