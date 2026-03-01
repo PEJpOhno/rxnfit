@@ -34,7 +34,8 @@ def _load_rate_const_overrides_csv(file_path, encoding, allowed_keys):
             "rate_const_overrides as path supports only CSV files. "
             f"Got: {file_path!r}"
         )
-    with open(file_path, mode='r', encoding=encoding) as f:
+    enc = 'utf-8-sig' if encoding == 'utf-8' else encoding
+    with open(file_path, mode='r', encoding=enc) as f:
         reader = csv.reader(f)
         try:
             header = next(reader)
@@ -253,6 +254,30 @@ class RxnODEbuild(RxnToODE):
 
         return ode_functions
 
+    def get_symbolic_rate_const_keys(self):
+        """Return the list of free parameter names (p0 order) for fitting.
+
+        Names are t-excluding symbols from rate_consts_dict (Symbol or
+        free_symbols of expressions), in sorted order. Same order as
+        create_ode_system_with_rate_consts and run_fit(p0=...) expect.
+
+        Returns:
+            list[str]: Parameter names in order, e.g. ['a', 'km'].
+        """
+        free_param_names = set()
+        for key, val in self.rate_consts_dict.items():
+            if isinstance(val, (int, float)):
+                continue
+            if isinstance(val, (Symbol, SympySymbol)):
+                if val.name != 't':
+                    free_param_names.add(val.name)
+            else:
+                syms = getattr(val, 'free_symbols', [])
+                for s in syms:
+                    if str(s) != 't':
+                        free_param_names.add(str(s))
+        return sorted(free_param_names)
+
     def create_ode_system_with_rate_consts(self):
         """Build ODE functions with rate constants as explicit arguments.
 
@@ -268,23 +293,8 @@ class RxnODEbuild(RxnToODE):
                 - symbolic_rate_const_keys: List of free rate constant names
                   in order (e.g. ['k1', 'k3'] when k2=k1*2).
         """
+        symbolic_rate_const_keys = self.get_symbolic_rate_const_keys()
         ode_functions = {}
-
-        # フィッティングで変える速度定数＝式の右辺に現れるシンボルのみ（式で定義されたものは含めない）
-        # シンボル t は除外する（積分の独立変数としてのみ扱う）
-        free_param_names = set()
-        for key, val in self.rate_consts_dict.items():
-            if isinstance(val, (int, float)):
-                continue
-            if isinstance(val, (Symbol, SympySymbol)):
-                if val.name != 't':
-                    free_param_names.add(val.name)
-            else:
-                syms = getattr(val, 'free_symbols', [])
-                for s in syms:
-                    if str(s) != 't':
-                        free_param_names.add(str(s))
-        symbolic_rate_const_keys = sorted(free_param_names)
 
         # 引数の順序を明示的に定義（速度定数も含む）
         args = ['t'] + self.function_names + symbolic_rate_const_keys

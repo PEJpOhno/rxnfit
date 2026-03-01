@@ -41,6 +41,7 @@ If you want to give it a quick try, just copy or move the example directory from
 3. To separate the reactants and the products, two ">" are setted with two columns. As with reaction SMARTS, you may write reaction conditions between the two ">"; in the current version of rxnfit these are unused.
 4. The products are putted in alternately with the coeficient and the chemical species.
 Note the reaction formula should be inputted by the left filling. To describe chemical species, it is better to avoid to use arithmetic symbols such as "+", "-" and "*" (e.g. use "**a**"(nion) in place of "-"). The coefficient '1' can be substituted for blank.  
+5. Each elementary reaction’s rate constant must be specified in the format ‘k + RID’. If left empty, the system will automatically assign ‘k + RID’.  
 
 The rate constant k_m can also be defined as a function of another elementary reaction rate constant k_n, or as a function of time t.  
 The example of a csv format is as follows.  Attached "examples/sample_data/sample_rxn_ref1.csv" and "examples/sample_data/refX/sample_rxn_refX.csv" are also available for demonstration.
