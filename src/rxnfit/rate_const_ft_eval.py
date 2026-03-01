@@ -127,6 +127,10 @@ def build_evaluator(rate_consts_dict, symbolic_rate_const_keys, fixed_rate_const
                 result[key] = float(sub_val)
             except (TypeError, ValueError):
                 result[key] = 0.0
+        # create_system_rhs が symbolic_rate_const_keys のキーで rate_vals を参照するため、
+        # パラメータ名をキーにした値も含める
+        for i, name in enumerate(symbolic_rate_const_keys):
+            result[name] = float(params[i])
         return result
 
     return evaluator

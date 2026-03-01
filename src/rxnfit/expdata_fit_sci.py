@@ -13,7 +13,7 @@ in ODE systems to experimental data using scipy.optimize.minimize.
 import functools
 import numpy as np
 from scipy.integrate import solve_ivp
-from scipy.optimize import minimize
+from scipy.optimize import minimize, OptimizeResult
 from sympy import Symbol
 from sympy.core.symbol import Symbol as SympySymbol
 
@@ -377,23 +377,38 @@ class ExpDataFitSci:
         self._param_info = None
         self._result = None
 
-    def run_fit(self, p0, opt_method='L-BFGS-B', bounds=None, verbose=True):
+    def run_fit(self, p0, opt_method='L-BFGS-B', bounds=None, verbose=True,
+                use_log_fit=False, lower_bound=None):
         """Run fitting and return optimized rate constants.
 
         Args:
             p0 (list): Initial guess for symbolic rate constants
                 (in symbolic_rate_const_keys order).
+                When use_log_fit=True, all elements must be positive.
             opt_method (str, optional): scipy.optimize.minimize method.
                 Defaults to 'L-BFGS-B'.
-            bounds (list, optional): Bounds for each parameter. If None,
-                uses [(1e-10, None)] * n_params.
+            bounds (list, optional): Bounds for each parameter (linear fit only).
+                If None, uses [(lower_bound or 1e-10, None)] * n_params.
+                When given, lower_bound is ignored. When use_log_fit=True,
+                bounds is ignored; lower_bound (or default 1e-6) is used instead.
+                Defaults to None.
             verbose (bool, optional): Print optimization result.
                 Defaults True.
+            use_log_fit (bool, optional): If True, optimize in log(k) space for
+                numerical stability with small rate constants. result.x is
+                always returned in linear scale (k). Defaults to False.
+            lower_bound (float, optional): Common lower bound for all parameters
+                (must be positive). When None: linear fit uses 1e-10, log fit
+                uses 1e-6. Defaults to None.
 
         Returns:
             tuple: (result, param_info)
-                - result: scipy.optimize.OptimizeResult.
+                - result: Object with .x (linear-scale k), .success, .fun.
                 - param_info: Dict with symbolic_rate_consts, etc.
+
+        Raises:
+            ValueError: If len(p0) != n_params, or lower_bound <= 0, or
+                use_log_fit=True with p0 containing non-positive values.
         """
         residual_func, param_info = solve_fit_model_multi(
             self.builded_rxnode, self.df_list, self.t_range,
@@ -407,8 +422,57 @@ class ExpDataFitSci:
                 f"({n_params})と一致しません。"
             )
 
+        if lower_bound is not None and lower_bound <= 0:
+            raise ValueError(
+                "lower_bound は正の数である必要があります。"
+            )
+
+        if use_log_fit:
+            p0_arr = np.asarray(p0, dtype=float)
+            if np.any(p0_arr <= 0):
+                raise ValueError(
+                    "use_log_fit=True のときは p0 の全要素が正である必要があります。"
+                )
+            low = lower_bound if lower_bound is not None else 1e-6
+            p0_log = np.log(p0_arr)
+            bounds_log = [(np.log(low), None)] * n_params
+
+            def residual_log_safe(p):
+                r = residual_func(np.exp(p))
+                return r if np.isfinite(r) else 1e15
+
+            result_log = minimize(
+                residual_log_safe,
+                p0_log,
+                method=opt_method,
+                bounds=bounds_log,
+            )
+            x_linear = np.exp(result_log.x)
+            result = OptimizeResult(
+                x=x_linear,
+                success=result_log.success,
+                fun=result_log.fun,
+                message=getattr(result_log, 'message', ''),
+                nfev=getattr(result_log, 'nfev', None),
+                nit=getattr(result_log, 'nit', None),
+                njev=getattr(result_log, 'njev', None),
+            )
+            self._param_info = param_info
+            self._result = result
+
+            if verbose:
+                symbolic_keys = param_info['symbolic_rate_consts']
+                print(f"最適化成功: {result.success}")
+                print("最適化された速度定数:")
+                for k, v in zip(symbolic_keys, x_linear):
+                    print(f"  {k} = {v:.6g}")
+                print(f"残差二乗和: {result.fun:.6g}")
+
+            return result, param_info
+
+        # Linear fit
         if bounds is None:
-            bounds = [(1e-10, None)] * n_params
+            bounds = [(lower_bound or 1e-10, None)] * n_params
 
         result = minimize(
             residual_func,
@@ -511,10 +575,12 @@ class ExpDataFitSci:
 
 def run_fit_multi(builded_rxnode, df_list, p0, t_range=None,
                   method="RK45", rtol=1e-6,
-                  opt_method='L-BFGS-B', bounds=None, verbose=True):
+                  opt_method='L-BFGS-B', bounds=None, verbose=True,
+                  use_log_fit=False, lower_bound=None):
     """Convenience wrapper around ExpDataFitSci.run_fit.
 
     If t_range is None, derives from first DataFrame.
+    use_log_fit and lower_bound are passed through to run_fit.
 
     Args:
         builded_rxnode (RxnODEbuild): Instance containing the reaction
@@ -532,20 +598,25 @@ def run_fit_multi(builded_rxnode, df_list, p0, t_range=None,
             Defaults to 1e-6.
         opt_method (str, optional): scipy.optimize.minimize method.
             Defaults to 'L-BFGS-B'.
-        bounds (list, optional): Bounds for each parameter. If None,
-            uses [(1e-10, None)] * n_params. Defaults to None.
+        bounds (list, optional): Bounds for each parameter (linear fit only).
+            If None, uses lower_bound or default. Defaults to None.
         verbose (bool, optional): Print optimization result.
             Defaults to True.
+        use_log_fit (bool, optional): If True, optimize in log(k) space.
+            Passed to run_fit. Defaults to False.
+        lower_bound (float, optional): Common lower bound for all parameters.
+            Passed to run_fit. Defaults to None.
 
     Returns:
         tuple: (result, param_info)
-            - result: scipy.optimize.OptimizeResult.
+            - result: Object with .x (linear-scale k), .success, .fun.
             - param_info: Dict with symbolic_rate_consts, function_names,
               n_params, n_datasets, y0_list.
 
     Raises:
         ValueError: If df_list is empty, column structure is invalid,
-            or len(p0) != number of symbolic rate constants.
+            len(p0) != number of symbolic rate constants, lower_bound <= 0,
+            or use_log_fit=True with non-positive p0.
     """
     if t_range is None:
         t_range = (
@@ -556,5 +627,10 @@ def run_fit_multi(builded_rxnode, df_list, p0, t_range=None,
         builded_rxnode, df_list, t_range, method=method, rtol=rtol
     )
     return fit_sci.run_fit(
-        p0, opt_method=opt_method, bounds=bounds, verbose=verbose
+        p0,
+        opt_method=opt_method,
+        bounds=bounds,
+        verbose=verbose,
+        use_log_fit=use_log_fit,
+        lower_bound=lower_bound,
     )

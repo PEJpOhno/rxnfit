@@ -10,7 +10,7 @@ based on reaction rate equations with all rate constants known.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Union, Callable, Dict
+from typing import Optional, List, Union, Callable, Dict, Tuple
 import sys
 import warnings
 from sympy import Basic as SympyBasic
@@ -359,6 +359,7 @@ class RxnODEsolver:
         solution=None,
         expdata_df: Optional[Union[pd.DataFrame, List[pd.DataFrame]]] = None,
         species: Optional[List[str]] = None,
+        subplot_layout: Optional[Tuple[int, int]] = None,
     ):
         """Plot the time evolution of chemical species.
         
@@ -379,15 +380,23 @@ class RxnODEsolver:
                 - Subsequent columns: concentrations for each species.
                 - Column names must match species names (e.g. from
                   self.builder.function_names).
-                If a list is passed, the 0th column name must be identical
-                across all DataFrames; otherwise a warning is emitted.
-                Scatter points and x-axis range/label are derived from
-                the first DataFrame when a list is given. Defaults to None.
+                If a list with more than one DataFrame is given, one
+                subplot is drawn per DataFrame (same solution curve,
+                scatter from that DataFrame). If a single DataFrame or
+                a list of length one is given, one figure with one axes
+                is drawn. When a list is passed, the 0th column name must
+                be identical across all DataFrames; otherwise a warning
+                is emitted. Defaults to None.
             species (list[str], optional): List of species names to plot.
                 If None, all species in the ODE system are plotted.
                 If provided, only these species are drawn. Any name not
                 in the ODE system triggers a warning and ValueError.
                 Defaults to None.
+            subplot_layout (tuple[int, int], optional): (n_rows, n_cols)
+                for the subplot grid when expdata_df is a list of multiple
+                DataFrames. If None, defaults to (len(expdata_df), 1)
+                (one column). Ignored when expdata_df is None or a single
+                DataFrame. Defaults to None.
 
         Returns:
             None
@@ -423,46 +432,92 @@ class RxnODEsolver:
         name_to_idx = {name: i for i, name in enumerate(all_species)}
         plot_items = [(name, name_to_idx[name]) for name in plot_species]
 
-        # expdata_df を正規化し、単位は expdata_reader で取得・不一致時はそこで警告
-        plot_df = None
-        time_unit = None
+        # expdata_df を正規化
         if expdata_df is not None:
             df_list = expdata_df if isinstance(expdata_df, list) else [expdata_df]
-            plot_df = df_list[0]
-            time_unit = get_time_unit_from_expdata(df_list)
+        else:
+            df_list = []
 
-        print("\n=== Time-course plot ===")
-        plt.figure(figsize=(12, 8))
-        ax = plt.gca()
-
-        # 解の時間範囲（実験データあり時に軸をここに合わせ、実線が圧縮されないようにする）
+        multi_subplots = len(df_list) > 1
         t_sol_min, t_sol_max = float(sol.t.min()), float(sol.t.max())
 
-        for species_name, i in plot_items:
-            line, = ax.plot(sol.t, sol.y[i], label=species_name, linewidth=2)
-            color = line.get_color()
-            if plot_df is not None and species_name in plot_df.columns:
-                t_exp = plot_df.iloc[:, 0].to_numpy()
-                c_exp = plot_df[species_name].to_numpy()
-                mask = ~np.isnan(c_exp)
-                ax.scatter(
-                    t_exp[mask], c_exp[mask],
-                    color=color, marker='o', s=50, zorder=5, edgecolors='white'
+        print("\n=== Time-course plot ===")
+
+        if multi_subplots:
+            n_plots = len(df_list)
+            n_rows, n_cols = (
+                subplot_layout if subplot_layout is not None else (n_plots, 1)
+            )
+            fig, axes = plt.subplots(
+                n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows)
+            )
+            if n_rows == 1 and n_cols == 1:
+                axes = np.array([[axes]])
+            elif n_rows == 1 or n_cols == 1:
+                axes = axes.reshape(n_rows, n_cols)
+
+            for idx, (ax, plot_df) in enumerate(zip(axes.flat, df_list)):
+                for species_name, i in plot_items:
+                    line, = ax.plot(
+                        sol.t, sol.y[i], label=species_name, linewidth=2
+                    )
+                    color = line.get_color()
+                    if species_name in plot_df.columns:
+                        t_exp = plot_df.iloc[:, 0].to_numpy()
+                        c_exp = plot_df[species_name].to_numpy()
+                        mask = ~np.isnan(c_exp)
+                        ax.scatter(
+                            t_exp[mask], c_exp[mask],
+                            color=color, marker='o', s=50, zorder=5,
+                            edgecolors='white'
+                        )
+                ax.set_xlim(t_sol_min, t_sol_max)
+                time_unit = get_time_unit_from_expdata([plot_df])
+                xlabel = (
+                    f"Time ({time_unit})" if time_unit is not None
+                    else "Time ()"
                 )
+                ax.set_xlabel(xlabel, fontsize=12)
+                ax.set_ylabel('Concentration', fontsize=12)
+                ax.set_title(f'Dataset {idx + 1}', fontsize=14)
+                ax.legend(loc='best', fontsize=9)
+                ax.grid(True, alpha=0.3)
 
-        # 実験データあり時は x 軸を解の時間範囲に合わせ、モデル曲線が確実に視認できるようにする
-        if plot_df is not None:
-            ax.set_xlim(t_sol_min, t_sol_max)
+            for idx in range(n_plots, axes.size):
+                axes.flat[idx].set_visible(False)
+            plt.tight_layout()
+            plt.show()
+        else:
+            plot_df = df_list[0] if df_list else None
+            time_unit = (
+                get_time_unit_from_expdata(df_list) if df_list else None
+            )
+            plt.figure(figsize=(12, 8))
+            ax = plt.gca()
 
-        # 横軸ラベル: expdata_reader で取得した単位を使う。データがなければ "Time ()"
-        xlabel = f"Time ({time_unit})" if time_unit is not None else "Time ()"
-        plt.xlabel(xlabel, fontsize=12)
-        plt.ylabel('Concentration', fontsize=12)
-        plt.title('Chemical Reaction Kinetics - Sample Data', fontsize=14)
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.show()
+            for species_name, i in plot_items:
+                line, = ax.plot(sol.t, sol.y[i], label=species_name, linewidth=2)
+                color = line.get_color()
+                if plot_df is not None and species_name in plot_df.columns:
+                    t_exp = plot_df.iloc[:, 0].to_numpy()
+                    c_exp = plot_df[species_name].to_numpy()
+                    mask = ~np.isnan(c_exp)
+                    ax.scatter(
+                        t_exp[mask], c_exp[mask],
+                        color=color, marker='o', s=50, zorder=5, edgecolors='white'
+                    )
+
+            if plot_df is not None:
+                ax.set_xlim(t_sol_min, t_sol_max)
+
+            xlabel = f"Time ({time_unit})" if time_unit is not None else "Time ()"
+            plt.xlabel(xlabel, fontsize=12)
+            plt.ylabel('Concentration', fontsize=12)
+            plt.title('Chemical Reaction Kinetics - Sample Data', fontsize=14)
+            plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
+            plt.show()
 
         # 描画した化学種についてのみ、最終時刻での濃度を表示
         print("\n=== Concentration at the final time point ===")
