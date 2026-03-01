@@ -9,7 +9,7 @@
 
 ## 2. Current version and requirements
 - current version = 0.1.0
-- pyhon >=3.13
+- pyhon >=3.12
 
 [dependencies]
 - NumPy
