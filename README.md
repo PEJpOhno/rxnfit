@@ -98,6 +98,13 @@ Numerical integration and plotting of ODE solutions.
 | class | SolverConfig | Dataclass: y0, t_span, t_eval, method, rtol. Optional: rate_const_values (dict or callable(t)), symbolic_rate_const_keys (both or neither). |
 | class | RxnODEsolver | Integrates ODE with builder and config. solve_system(), to_dataframe(), rsq(), solution_plot(). When config has rate_const_values and symbolic_rate_const_keys, uses rate-constants ODE path. |
 
+### 6-6. p0_opt_fit
+Optimizes initial parameter values (p0) for rate constants using Optuna, then fits with ExpDataFitSci.
+
+| item | name | description |
+|------|------|-------------|
+| class | P0OptFit | Optimizes p0 via Optuna (e.g. suggest_float with log=True) and runs ExpDataFitSci.run_fit with the best p0. optimize(n_trials, show_progress_bar, ...) returns (dict of variable → (initial, fitted), rss). optuna_log() returns per-trial log. |
+
 ## 7. References  
 
 - **Python**: Python Software Foundation. (2024). *Python* (Version 3.13) [Computer software]. https://www.python.org/  
@@ -106,4 +113,7 @@ Numerical integration and plotting of ODE solutions.
 - **SciPy**: Virtanen, P., Gommers, R., Oliphant, T. E., et al. (2020). SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python. *Nature Methods*, 17(3), 261–272. https://doi.org/10.1038/s41592-019-0686-2
 - **SymPy**: Meurer, A., Smith, C. P., Paprocki, M., et al. (2017). SymPy: symbolic computing in Python. *PeerJ Computer Science*, 3, e103. https://doi.org/10.7717/peerj-cs.103
 - **Matplotlib**: Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. *Computing in Science & Engineering*, 9(3), 90–95. https://doi.org/10.1109/MCSE.2007.55
+- **Optuna**: Akiba, T., Sano, S., Yanase, T., Ohta, T., & Koyama, M. (2019). Optuna: A next-generation hyperparameter optimization framework. *Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining (KDD '19)*, 2623–2631. https://doi.org/10.1145/3292500.3330701
 
+## Acknowledgements
+This module and its accompanying documentation were developed with the support of Cursor’s AI-assisted tools.  

@@ -217,6 +217,9 @@ class RxnODEbuild(RxnToODE):
 
         Returns:
             dict: Species name -> callable(t, *y) returning d(species)/dt.
+
+        Raises:
+            RuntimeError: If lambdify fails for any species (fail fast).
         """
         ode_functions = {}
 
@@ -249,8 +252,10 @@ class RxnODEbuild(RxnToODE):
                 print(f"Successfully created function for {key} "
                       f"with args: {args}")
             except Exception as e:
-                print(f"Warning: Failed to create lambdify function "
-                      f"for {key}: {e}")
+                raise RuntimeError(
+                    f"ODE構築に失敗しました (化学種: {key}). "
+                    f"式: {self.sys_odes_dict[key]}. 原因: {e}"
+                ) from e
 
         return ode_functions
 
@@ -292,6 +297,9 @@ class RxnODEbuild(RxnToODE):
                 - ode_functions: Species name -> callable(t, *y, *rate_consts).
                 - symbolic_rate_const_keys: List of free rate constant names
                   in order (e.g. ['k1', 'k3'] when k2=k1*2).
+
+        Raises:
+            RuntimeError: If lambdify fails for any species (fail fast).
         """
         symbolic_rate_const_keys = self.get_symbolic_rate_const_keys()
         ode_functions = {}
@@ -320,9 +328,10 @@ class RxnODEbuild(RxnToODE):
                     args, rhs_expr, modules='numpy'
                 )
             except Exception as e:
-                print(f"Warning: Failed to create lambdify function "
-                      f"for {key}: {e}")
-                ode_functions[key] = None
+                raise RuntimeError(
+                    f"ODE構築に失敗しました (化学種: {key}). "
+                    f"式: {self.sys_odes_dict[key]}. 原因: {e}"
+                ) from e
 
         return ode_functions, symbolic_rate_const_keys
 
@@ -440,6 +449,10 @@ def create_system_rhs(ode_functions_dict, function_names,
     Returns:
         callable: system_rhs(t, y) returning a list of d(species)/dt in
             function_names order.
+
+    Raises:
+        RuntimeError: If any ODE function is None or if evaluation fails
+            during integration (fail fast).
     """
     # クロージャでパラメータをキャプチャ（solve_ivpは(t, y)シグネチャを要求）
     def system_rhs(t, y):
@@ -458,8 +471,10 @@ def create_system_rhs(ode_functions_dict, function_names,
                 try:
                     func = ode_functions_dict[species_name]
                     if func is None:
-                        rhs_odesys.append(0.0)
-                        continue
+                        raise RuntimeError(
+                            f"化学種 '{species_name}' のODE関数がNoneです。"
+                            "lambdifyの失敗が想定されます。"
+                        )
 
                     # 速度定数を動的に渡す場合
                     if (rate_const_values is not None and
@@ -496,8 +511,10 @@ def create_system_rhs(ode_functions_dict, function_names,
 
                     rhs_odesys.append(result)
                 except Exception as e:
-                    print(f"Error in {species_name}: {e}")
-                    rhs_odesys.append(0.0)
+                    raise RuntimeError(
+                        f"ODE評価中にエラーが発生しました (化学種: {species_name}). "
+                        f"原因: {e}"
+                    ) from e
             else:
                 rhs_odesys.append(0.0)
         return rhs_odesys
