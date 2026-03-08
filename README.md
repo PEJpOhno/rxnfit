@@ -17,6 +17,7 @@
 - SciPy
 - SymPy
 - Matplotlib  
+- Optuna
 
 ## 3. Copyright and license
 Copyright (c) 2025 Mitsuru Ohno
