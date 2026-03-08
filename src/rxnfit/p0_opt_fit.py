@@ -11,9 +11,10 @@ module only imports and calls build_ode, expdata_fit_sci, etc.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import optuna
+from optuna.exceptions import TrialPruned
 from optuna.trial import TrialState
 
 from .build_ode import RxnODEbuild
@@ -22,6 +23,9 @@ from .expdata_fit_sci import ExpDataFitSci
 # Default exploration range (low, high) per spec
 _DEFAULT_LOW = 1e-8
 _DEFAULT_HIGH = 1e2
+
+# Default exceptions to catch so optimization continues after a trial failure
+_DEFAULT_CATCH: Tuple[Type[BaseException], ...] = (TrialPruned, RuntimeError, ValueError)
 
 
 def _default_t_range_from_dfs(df_list: list) -> Tuple[float, float]:
@@ -66,7 +70,11 @@ def _resolve_param_bounds(
 
 
 class P0OptFit:
-    """Optimize initial parameter values (p0) for ODE rate constants using Optuna, then fit with ExpDataFitSci."""
+    """Optimize initial parameter values (p0) for ODE rate constants using Optuna, then fit with ExpDataFitSci.
+
+    By default no random seed is set; Optuna uses its default (TPESampler without seed).
+    Pass seed in the constructor for reproducible search.
+    """
 
     def __init__(
         self,
@@ -82,6 +90,8 @@ class P0OptFit:
         lower_bound: Optional[float] = None,
         verbose: bool = True,
         storage: Optional[Union[str, optuna.storages.BaseStorage]] = None,
+        seed: Optional[int] = None,
+        catch: Optional[Union[Tuple[Type[BaseException], ...], List[Type[BaseException]]]] = None,
     ):
         """Initialize the p0 optimizer.
 
@@ -98,6 +108,13 @@ class P0OptFit:
             lower_bound: Common lower bound for parameters (run_fit). Default None.
             verbose: Whether to print run_fit result. Default True.
             storage: Optuna storage (e.g. RDB URL). None for in-memory.
+            seed: Random seed for Optuna sampler. If None (default), no seed is set;
+                Optuna uses its default (sampler not specified, so TPESampler is used).
+                If given, TPESampler(seed=seed) is used for reproducible search.
+            catch: Exception types to catch so that a failed trial does not stop optimization.
+                Tuple or list of exception classes. If None, uses (TrialPruned, RuntimeError,
+                ValueError). If empty tuple/list, no exceptions are caught (strict mode;
+                any exception in the objective will stop optimization).
         """
         if not df_list:
             raise ValueError("df_list cannot be empty.")
@@ -127,6 +144,11 @@ class P0OptFit:
         self._lower_bound = lower_bound
         self._verbose = verbose
         self._storage = storage
+        self._seed = seed
+        if catch is None:
+            self._catch: Tuple[Type[BaseException], ...] = _DEFAULT_CATCH
+        else:
+            self._catch = tuple(catch)
 
         self._study: Optional[optuna.Study] = None
 
@@ -177,6 +199,7 @@ class P0OptFit:
             n_jobs: Number of parallel jobs. Passed to study.optimize().
             show_progress_bar: Whether to show progress bar. Default True.
             **kwargs: Additional arguments passed to study.optimize().
+                Note: 'catch' is ignored; use the constructor argument to set it.
 
         Returns:
             Tuple of (dict, rss):
@@ -186,14 +209,20 @@ class P0OptFit:
         Raises:
             RuntimeError: If all trials fail.
         """
-        study = optuna.create_study(direction="minimize", storage=self._storage)
+        kwargs_opt = {k: v for k, v in kwargs.items() if k != "catch"}
+        if self._seed is not None:
+            sampler = optuna.samplers.TPESampler(seed=self._seed)
+            study = optuna.create_study(direction="minimize", storage=self._storage, sampler=sampler)
+        else:
+            study = optuna.create_study(direction="minimize", storage=self._storage)
         study.optimize(
             self._objective,
             n_trials=n_trials,
             timeout=timeout,
             n_jobs=n_jobs,
             show_progress_bar=show_progress_bar,
-            **kwargs,
+            catch=self._catch,
+            **kwargs_opt,
         )
         self._study = study
 
