@@ -366,14 +366,14 @@ def _build_rate_consts_sympy(raw_rate_consts):
         free_names = {str(sym) for sym in getattr(parsed, 'free_symbols', [])}
         if isinstance(parsed, Symbol) and parsed.name not in allowed_keys:
             raise ValueError(
-                "式の右辺に存在しない速度定数を指定しました: "
-                f"'{parsed.name}'. 使用可能な速度定数: {sorted(allowed_keys)}"
+                "Rate constant '{parsed.name}' in expression is not defined. "
+                f"Allowed rate constants: {sorted(allowed_keys)}"
             )
         if free_names and not free_names.issubset(allowed_keys):
             undefined = free_names - allowed_keys
             raise ValueError(
-                "式の右辺に存在しない速度定数を指定しました: "
-                f"{undefined}. 使用可能な速度定数: {sorted(allowed_keys)}"
+                f"Rate constants {undefined} in expression are not defined. "
+                f"Allowed: {sorted(allowed_keys)}"
             )
         result[key] = parsed
     return result

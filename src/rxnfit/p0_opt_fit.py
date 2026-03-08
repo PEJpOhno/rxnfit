@@ -57,15 +57,15 @@ def _resolve_param_bounds(
         for key in param_bounds:
             if key not in allowed:
                 raise ValueError(
-                    f"param_bounds にシンボリック速度定数に存在しないキーが含まれています: {key!r}. "
-                    f"使用可能: {sorted(allowed)}."
+                    f"param_bounds contains a key that is not a symbolic rate constant: {key!r}. "
+                    f"Valid keys: {sorted(allowed)}."
                 )
         return [
             param_bounds.get(name, default)
             for name in symbolic_keys
         ]
     raise TypeError(
-        "param_bounds は (下限, 上限) のタプル、または変数名をキーとする辞書である必要があります。"
+        "param_bounds must be a (low, high) tuple or a dict with variable names as keys."
     )
 
 
@@ -132,7 +132,7 @@ class P0OptFit:
         symbolic_keys = self._builded_rxnode.get_symbolic_rate_const_keys()
         if not symbolic_keys:
             raise ValueError(
-                "シンボリックな速度定数がありません。フィッティング対象が存在しません。"
+                "No symbolic rate constants. Nothing to fit."
             )
         self._symbolic_keys = symbolic_keys
         self._bounds_per_param = _resolve_param_bounds(param_bounds, symbolic_keys)
@@ -169,7 +169,7 @@ class P0OptFit:
             method=self._method,
             rtol=self._rtol,
         )
-        result, _ = fit.run_fit(
+        result, _, fit_metrics_ret = fit.run_fit(
             p0,
             opt_method=self._opt_method,
             bounds=bounds,
@@ -179,7 +179,7 @@ class P0OptFit:
         )
         if not result.success:
             raise RuntimeError(
-                f"run_fit が収束しませんでした: {getattr(result, 'message', '')}"
+                f"run_fit did not converge: {getattr(result, 'message', '')}"
             )
         return float(result.fun)
 
@@ -190,7 +190,7 @@ class P0OptFit:
         n_jobs: int = 1,
         show_progress_bar: bool = True,
         **kwargs: Any,
-    ) -> Tuple[Dict[str, Tuple[float, float]], float]:
+    ) -> Tuple[Dict[str, Tuple[float, float]], Dict[str, float]]:
         """Run Optuna optimization and return best p0 and fitted result.
 
         Args:
@@ -202,9 +202,9 @@ class P0OptFit:
                 Note: 'catch' is ignored; use the constructor argument to set it.
 
         Returns:
-            Tuple of (dict, rss):
+            Tuple of (dict, fit_metrics):
                 - dict: { variable_name: (optimal_initial_value, fitted_value) }
-                - rss: Residual sum of squares.
+                - fit_metrics: Dict with keys 'rss', 'tss', 'r2'.
 
         Raises:
             RuntimeError: If all trials fail.
@@ -228,7 +228,7 @@ class P0OptFit:
 
         complete = [t for t in study.trials if t.state == TrialState.COMPLETE]
         if not complete:
-            raise RuntimeError("全トライアルが失敗しました。")
+            raise RuntimeError("All trials failed.")
 
         best = min(complete, key=lambda t: t.value)
         p0_best = [best.params[name] for name in self._symbolic_keys]
@@ -241,20 +241,28 @@ class P0OptFit:
             method=self._method,
             rtol=self._rtol,
         )
-        result, _ = fit.run_fit(
+        result, _, fit_metrics_ret = fit.run_fit(
             p0_best,
             opt_method=self._opt_method,
             bounds=bounds,
-            verbose=self._verbose,
+            verbose=False,
             use_log_fit=self._use_log_fit,
             lower_bound=self._lower_bound,
         )
-        rss = float(result.fun)
         out_dict = {
             name: (p0_best[i], float(result.x[i]))
             for i, name in enumerate(self._symbolic_keys)
         }
-        return (out_dict, rss)
+        if self._verbose:
+            print(f"Optimization success: {result.success}")
+            print("Fitted rate constants:")
+            for i, name in enumerate(self._symbolic_keys):
+                print(f"  {name} = {result.x[i]:.6g}")
+            print(
+                f"Residual sum of squares: {fit_metrics_ret['rss']:.6g}  "
+                f"R²: {fit_metrics_ret['r2']:.6g}"
+            )
+        return (out_dict, fit_metrics_ret)
 
     def optuna_log(self) -> List[Dict[str, Any]]:
         """Return per-trial log. Empty list if optimize() has not been run.

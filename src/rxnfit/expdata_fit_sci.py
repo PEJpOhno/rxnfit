@@ -11,6 +11,7 @@ in ODE systems to experimental data using scipy.optimize.minimize.
 """
 
 import functools
+import warnings
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.optimize import minimize, OptimizeResult
@@ -24,6 +25,8 @@ from .expdata_reader import (
     get_y0_from_expdata,
     align_expdata_to_function_names
 )
+from .fit_metrics import fit_metrics as compute_fit_metrics
+from .fit_metrics import TSS_MIN_THRESHOLD
 from .rate_const_ft_eval import has_time_dependent_rates, build_evaluator
 
 
@@ -63,7 +66,7 @@ def _eval_ode_fit(t, *params, fit_ctx):
             rate_const_values[key] = params[i]
         else:
             raise ValueError(
-                f"パラメータが不足しています。速度定数 {key} の値が必要です。"
+                f"Insufficient parameters. A value for rate constant {key} is required."
             )
 
     system_rhs = create_system_rhs(
@@ -76,7 +79,7 @@ def _eval_ode_fit(t, *params, fit_ctx):
     if isinstance(t, (list, np.ndarray)):
         t_eval = np.array(t)
     else:
-        raise ValueError("tは配列である必要があります")
+        raise ValueError("t must be an array.")
 
     try:
         solution = solve_ivp(
@@ -89,11 +92,11 @@ def _eval_ode_fit(t, *params, fit_ctx):
         )
         if not solution.success:
             raise RuntimeError(
-                f"数値積分が失敗しました: {solution.message}"
+                f"Numerical integration failed: {solution.message}"
             )
         return solution.y
     except Exception as e:
-        print(f"数値積分中にエラーが発生しました: {e}")
+        print(f"An error occurred during numerical integration: {e}")
         raise
 
 
@@ -132,7 +135,7 @@ def _compute_multi_residual(params, fit_ctx):
                 rate_const_values[key] = params[i]
             else:
                 raise ValueError(
-                    f"パラメータが不足しています。速度定数 {key} の値が必要です。"
+                    f"Insufficient parameters. A value for rate constant {key} is required."
                 )
 
     system_rhs = create_system_rhs(
@@ -224,8 +227,8 @@ def solve_fit_model(
 
     if len(fixed_initial_values) != len(function_names):
         raise ValueError(
-            f"fixed_initial_valuesの長さ({len(fixed_initial_values)})が"
-            f"化学種数({len(function_names)})と一致しません。"
+            f"len(fixed_initial_values) ({len(fixed_initial_values)}) does not "
+            f"match the number of species ({len(function_names)})."
         )
 
     y0_fixed = list(fixed_initial_values)
@@ -342,7 +345,49 @@ def solve_fit_model_multi(
         't0_list': t0_list,
     }
 
-    return residual_func, param_info
+    return residual_func, param_info, fit_ctx
+
+
+def _normalize_p0(p0, param_info):
+    """Convert p0 to a list in symbolic_rate_const_keys order.
+
+    If p0 is a dict, validate keys (no extra, no missing) and values (numeric),
+    then return a list in param_info['symbolic_rate_consts'] order.
+    If p0 is a list or tuple, check length and return as list.
+
+    Raises:
+        ValueError: If p0 is dict with invalid keys or non-numeric values,
+            or if sequence length does not match n_params.
+    """
+    symbolic_keys = param_info['symbolic_rate_consts']
+    n_params = param_info['n_params']
+
+    if isinstance(p0, dict):
+        p0_keys = set(p0.keys())
+        allowed = set(symbolic_keys)
+        extra = p0_keys - allowed
+        if extra:
+            raise ValueError(
+                f"p0 contains undefined symbolic rate constant names: {sorted(extra)}. "
+                f"Valid keys: {sorted(allowed)}."
+            )
+        missing = allowed - p0_keys
+        if missing:
+            raise ValueError(
+                f"p0 is missing the following symbolic rate constants: {sorted(missing)}."
+            )
+        try:
+            return [float(p0[k]) for k in symbolic_keys]
+        except (TypeError, ValueError):
+            raise ValueError("All values in p0 must be numeric.")
+    else:
+        p0_list = list(p0)
+        if len(p0_list) != n_params:
+            raise ValueError(
+                f"p0 length ({len(p0_list)}) does not match number of symbolic "
+                f"rate constants ({n_params})."
+            )
+        return p0_list
 
 
 class ExpDataFitSci:
@@ -382,18 +427,25 @@ class ExpDataFitSci:
         """Run fitting and return optimized rate constants.
 
         Args:
-            p0 (list): Initial guess for symbolic rate constants
-                (in symbolic_rate_const_keys order).
-                When use_log_fit=True, all elements must be positive.
+            p0 (list, tuple, or dict): Initial guess for symbolic rate constants.
+                - list or tuple: Values in the order of symbolic_rate_const_keys.
+                  The order you give is assumed correct. Length must match the
+                  number of symbolic rate constants.
+                - dict: Keys are symbolic rate constant names (strings, e.g.
+                  "k1", "k2"). Values are initial guesses (numeric). Keys must
+                  match get_symbolic_rate_const_keys() exactly (no extra keys,
+                  no missing keys). Example: {"k1": 0.001, "k2": 0.002}.
+                When use_log_fit=True, all values must be positive.
             opt_method (str, optional): scipy.optimize.minimize method.
                 Defaults to 'L-BFGS-B'.
-            bounds (list, optional): Bounds for each parameter (linear fit only).
-                If None, uses [(lower_bound or 1e-10, None)] * n_params.
-                When given, lower_bound is ignored. When use_log_fit=True,
-                bounds is ignored; lower_bound (or default 1e-6) is used instead.
+            bounds (list, optional): Bounds for each parameter (linear fit only),
+                in symbolic_rate_const_keys order. If None, uses
+                [(lower_bound or 1e-10, None)] * n_params. When given,
+                lower_bound is ignored. When use_log_fit=True, bounds is
+                ignored; lower_bound (or default 1e-6) is used instead.
                 Defaults to None.
             verbose (bool, optional): Print optimization result.
-                Defaults True.
+                Defaults to True.
             use_log_fit (bool, optional): If True, optimize in log(k) space for
                 numerical stability with small rate constants. result.x is
                 always returned in linear scale (k). Defaults to False.
@@ -402,36 +454,35 @@ class ExpDataFitSci:
                 uses 1e-6. Defaults to None.
 
         Returns:
-            tuple: (result, param_info)
-                - result: Object with .x (linear-scale k), .success, .fun.
+            tuple: (result, param_info, fit_metrics)
+                - result: Object with .x (linear-scale k), .success, .fun,
+                  .tss, .r2. (RSS is .fun; do not use .rss.)
                 - param_info: Dict with symbolic_rate_consts, etc.
+                - fit_metrics: Dict with keys 'rss', 'tss', 'r2'.
 
         Raises:
-            ValueError: If len(p0) != n_params, or lower_bound <= 0, or
-                use_log_fit=True with p0 containing non-positive values.
+            ValueError: If p0 has wrong length (sequence), invalid keys or
+                non-numeric values (dict), lower_bound <= 0, or
+                use_log_fit=True with non-positive p0 values.
         """
-        residual_func, param_info = solve_fit_model_multi(
+        residual_func, param_info, fit_ctx = solve_fit_model_multi(
             self.builded_rxnode, self.df_list, self.t_range,
             method=self.method, rtol=self.rtol
         )
 
         n_params = param_info['n_params']
-        if len(p0) != n_params:
-            raise ValueError(
-                f"p0の長さ({len(p0)})がシンボリック速度定数の数"
-                f"({n_params})と一致しません。"
-            )
+        p0 = _normalize_p0(p0, param_info)
 
         if lower_bound is not None and lower_bound <= 0:
             raise ValueError(
-                "lower_bound は正の数である必要があります。"
+                "lower_bound must be positive."
             )
 
         if use_log_fit:
             p0_arr = np.asarray(p0, dtype=float)
             if np.any(p0_arr <= 0):
                 raise ValueError(
-                    "use_log_fit=True のときは p0 の全要素が正である必要があります。"
+                    "When use_log_fit=True, all elements of p0 must be positive."
                 )
             low = lower_bound if lower_bound is not None else 1e-6
             p0_log = np.log(p0_arr)
@@ -460,15 +511,27 @@ class ExpDataFitSci:
             self._param_info = param_info
             self._result = result
 
+            metrics = compute_fit_metrics(fit_ctx['datasets'], result.fun)
+            result.tss = metrics['tss']
+            result.r2 = metrics['r2']
+            if metrics['tss'] < TSS_MIN_THRESHOLD:
+                warnings.warn(
+                    "TSS is nearly zero; R² may be unreliable.",
+                    UserWarning,
+                    stacklevel=2,
+                )
             if verbose:
                 symbolic_keys = param_info['symbolic_rate_consts']
-                print(f"最適化成功: {result.success}")
-                print("最適化された速度定数:")
+                print(f"Optimization success: {result.success}")
+                print("Fitted rate constants:")
                 for k, v in zip(symbolic_keys, x_linear):
                     print(f"  {k} = {v:.6g}")
-                print(f"残差二乗和: {result.fun:.6g}")
+                print(
+                    f"Residual sum of squares: {metrics['rss']:.6g}  "
+                    f"R²: {metrics['r2']:.6g}"
+                )
 
-            return result, param_info
+            return result, param_info, metrics
 
         # Linear fit
         if bounds is None:
@@ -484,15 +547,27 @@ class ExpDataFitSci:
         self._param_info = param_info
         self._result = result
 
+        metrics = compute_fit_metrics(fit_ctx['datasets'], result.fun)
+        result.tss = metrics['tss']
+        result.r2 = metrics['r2']
+        if metrics['tss'] < TSS_MIN_THRESHOLD:
+            warnings.warn(
+                "TSS is nearly zero; R² may be unreliable.",
+                UserWarning,
+                stacklevel=2,
+            )
         if verbose:
             symbolic_keys = param_info['symbolic_rate_consts']
-            print(f"最適化成功: {result.success}")
-            print("最適化された速度定数:")
+            print(f"Optimization success: {result.success}")
+            print("Fitted rate constants:")
             for k, v in zip(symbolic_keys, result.x):
                 print(f"  {k} = {v:.6g}")
-            print(f"残差二乗和: {result.fun:.6g}")
+            print(
+                f"Residual sum of squares: {metrics['rss']:.6g}  "
+                f"R²: {metrics['r2']:.6g}"
+            )
 
-        return result, param_info
+        return result, param_info, metrics
 
     def get_solver_config_args(self, dataset_index=0):
         """Get kwargs for SolverConfig for use with RxnODEsolver.
@@ -518,7 +593,7 @@ class ExpDataFitSci:
                 asking to call get_solver_config_args() only after run_fit()).
         """
         if self._param_info is None:
-            raise RuntimeError("run_fit を先に実行してください。")
+            raise RuntimeError("run_fit must be called first.")
         y0 = self._param_info['y0_list'][dataset_index]
         t0 = self._param_info['t0_list'][dataset_index]
         out = {
@@ -568,7 +643,7 @@ class ExpDataFitSci:
         """
         res = result if result is not None else self._result
         if res is None or self._param_info is None:
-            raise RuntimeError("run_fit を先に実行してください。")
+            raise RuntimeError("run_fit must be called first.")
         symbolic_keys = self._param_info['symbolic_rate_consts']
         return dict(zip(symbolic_keys, res.x))
 
@@ -587,8 +662,10 @@ def run_fit_multi(builded_rxnode, df_list, p0, t_range=None,
             system definition.
         df_list (list[pandas.DataFrame]): List of experimental DataFrames.
             All must have same structure (time + species columns).
-        p0 (list): Initial guess for symbolic rate constants
-            (in symbolic_rate_const_keys order).
+        p0 (list, tuple, or dict): Initial guess for symbolic rate constants.
+            Same semantics as ExpDataFitSci.run_fit(p0=...): list/tuple in
+            symbolic_rate_const_keys order, or dict with string keys (e.g.
+            {"k1": 0.001, "k2": 0.002}).
         t_range (tuple[float, float], optional): Integration time span
             (t_start, t_end). If None, derives from first DataFrame.
             Defaults to None.
@@ -608,15 +685,17 @@ def run_fit_multi(builded_rxnode, df_list, p0, t_range=None,
             Passed to run_fit. Defaults to None.
 
     Returns:
-        tuple: (result, param_info)
-            - result: Object with .x (linear-scale k), .success, .fun.
+        tuple: (result, param_info, fit_metrics)
+            - result: Object with .x (linear-scale k), .success, .fun,
+              .tss, .r2. (RSS is .fun.)
             - param_info: Dict with symbolic_rate_consts, function_names,
               n_params, n_datasets, y0_list.
+            - fit_metrics: Dict with keys 'rss', 'tss', 'r2'.
 
     Raises:
         ValueError: If df_list is empty, column structure is invalid,
-            len(p0) != number of symbolic rate constants, lower_bound <= 0,
-            or use_log_fit=True with non-positive p0.
+            p0 has wrong length or invalid keys/values (see run_fit),
+            lower_bound <= 0, or use_log_fit=True with non-positive p0.
     """
     if t_range is None:
         t_range = (

@@ -253,8 +253,8 @@ class RxnODEbuild(RxnToODE):
                       f"with args: {args}")
             except Exception as e:
                 raise RuntimeError(
-                    f"ODE構築に失敗しました (化学種: {key}). "
-                    f"式: {self.sys_odes_dict[key]}. 原因: {e}"
+                    f"ODE construction failed (species: {key}). "
+                    f"Expression: {self.sys_odes_dict[key]}. Cause: {e}"
                 ) from e
 
         return ode_functions
@@ -329,8 +329,8 @@ class RxnODEbuild(RxnToODE):
                 )
             except Exception as e:
                 raise RuntimeError(
-                    f"ODE構築に失敗しました (化学種: {key}). "
-                    f"式: {self.sys_odes_dict[key]}. 原因: {e}"
+                    f"ODE construction failed (species: {key}). "
+                    f"Expression: {self.sys_odes_dict[key]}. Cause: {e}"
                 ) from e
 
         return ode_functions, symbolic_rate_const_keys
@@ -472,8 +472,7 @@ def create_system_rhs(ode_functions_dict, function_names,
                     func = ode_functions_dict[species_name]
                     if func is None:
                         raise RuntimeError(
-                            f"化学種 '{species_name}' のODE関数がNoneです。"
-                            "lambdifyの失敗が想定されます。"
+                            f"ODE function for species '{species_name}' is None. lambdify likely failed."
                         )
 
                     # 速度定数を動的に渡す場合
@@ -512,8 +511,8 @@ def create_system_rhs(ode_functions_dict, function_names,
                     rhs_odesys.append(result)
                 except Exception as e:
                     raise RuntimeError(
-                        f"ODE評価中にエラーが発生しました (化学種: {species_name}). "
-                        f"原因: {e}"
+                        f"An error occurred during ODE evaluation (species: {species_name}). "
+                        f"Cause: {e}"
                     ) from e
             else:
                 rhs_odesys.append(0.0)

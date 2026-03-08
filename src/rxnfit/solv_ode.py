@@ -22,6 +22,8 @@ from scipy.integrate import solve_ivp
 
 from .build_ode import RxnODEbuild, create_system_rhs
 from .expdata_reader import get_time_unit_from_expdata
+from .fit_metrics import fit_metrics as compute_fit_metrics
+from .fit_metrics import expdata_df_to_datasets, TSS_MIN_THRESHOLD
 
 
 @dataclass
@@ -58,8 +60,9 @@ class RxnODEsolver:
     """Solver for ODE systems representing chemical reaction kinetics.
     
     This class integrates ODE systems using scipy.solve_ivp and provides
-    methods to visualize the time evolution of chemical species.
-    
+    methods to visualize the time evolution of chemical species and to
+    compare the solution with experimental data (goodness_of_fit).
+
     Attributes:
         builder (RxnODEbuild): The ODE builder instance containing the
             reaction system definition.
@@ -221,35 +224,8 @@ class RxnODEsolver:
             data[name] = sol.y[i]
         return pd.DataFrame(data)
 
-    def rsq(self, expdata_df, solution=None, verbose=True, recompute=True):
-        """Compute the sum of squared residuals at experimental time points.
-
-        When recompute=True (default), re-integrates the ODE at the valid
-        experimental time points and returns the sum of (observed - model)^2.
-        When recompute=False, interpolates the existing solution at
-        experimental times to compute the residual. NaNs in the data are
-        excluded. Output format matches expdata_fit_sci.run_fit.
-
-        Args:
-            expdata_df (pandas.DataFrame): Time-course data. First column
-                is time; remaining columns are species concentrations.
-                Column names must match function_names.
-            solution (scipy.integrate.OdeResult, optional): Solution to use
-                when recompute=False. If None, uses the result of
-                solve_system(). Defaults to None.
-            verbose (bool, optional): If True, print the residual sum of
-                squares. Defaults to True.
-            recompute (bool, optional): If True, re-integrate at
-                experimental times to compute residuals. If False, use
-                interpolation. Defaults to True.
-
-        Returns:
-            float: Sum of squared residuals.
-
-        Raises:
-            RuntimeError: If no solution is available, or if recompute=True
-                but solve_system() has not been called.
-        """
+    def _compute_rss(self, expdata_df, solution=None, recompute=True):
+        """Compute RSS at experimental time points (internal)."""
         if recompute:
             if self.ode_construct is None:
                 raise RuntimeError(
@@ -300,7 +276,7 @@ class RxnODEsolver:
                     UserWarning,
                     stacklevel=2,
                 )
-                return self._rsq_interp(expdata_df, solution, verbose)
+                return self._compute_rss_interp(expdata_df, solution)
             time_to_idx = {float(t): idx for idx, t in enumerate(sol_new.t)}
             names = self.builder.function_names
             name_to_idx = {name: i for i, name in enumerate(names)}
@@ -317,17 +293,12 @@ class RxnODEsolver:
                     t_j = float(t_j)
                     idx = time_to_idx[t_j]
                     rss += (c_exp[j] - sol_new.y[i][idx]) ** 2
-            if verbose:
-                print(f"Residual sum of squares: {rss:.6g}")
             return float(rss)
 
-        return self._rsq_interp(expdata_df, solution, verbose)
+        return self._compute_rss_interp(expdata_df, solution)
 
-    def _rsq_interp(self, expdata_df, solution=None, verbose=True):
-        """Compute sum of squared residuals by interpolating the solution.
-
-        Used when rsq is called with recompute=False.
-        """
+    def _compute_rss_interp(self, expdata_df, solution=None):
+        """Compute RSS by interpolating the solution (internal)."""
         sol = solution if solution is not None else self.solution
         if sol is None:
             raise RuntimeError(
@@ -349,9 +320,51 @@ class RxnODEsolver:
             c_m = c_exp[mask]
             c_model = np.interp(t_m, sol.t, sol.y[i])
             rss += np.sum((c_m - c_model) ** 2)
-        if verbose:
-            print(f"Residual sum of squares: {rss:.6g}")
         return float(rss)
+
+    def goodness_of_fit(self, expdata_df, solution=None, verbose=True, recompute=True):
+        """Compute RSS, TSS, and R² for solution vs. experimental data.
+
+        Uses the same valid points for RSS and TSS (NaNs excluded).
+        TSS uses per-species means. R² = 1 - RSS/TSS.
+        Returns the same dict shape as fit_metrics.fit_metrics(datasets, rss).
+
+        Args:
+            expdata_df (pandas.DataFrame): Time-course data. First column
+                is time; remaining columns are species concentrations.
+                Column names must match function_names.
+            solution (scipy.integrate.OdeResult, optional): Solution to use
+                when recompute=False. If None, uses the result of
+                solve_system(). Defaults to None.
+            verbose (bool, optional): If True, print RSS and R².
+                Defaults to True.
+            recompute (bool, optional): If True, re-integrate at
+                experimental times for RSS. If False, use interpolation.
+                Defaults to True.
+
+        Returns:
+            dict: Keys 'rss', 'tss', 'r2' (all float).
+
+        Raises:
+            RuntimeError: If no solution is available, or if recompute=True
+                but solve_system() has not been called.
+        """
+        rss = self._compute_rss(expdata_df, solution, recompute)
+        datasets = expdata_df_to_datasets(expdata_df, self.builder.function_names)
+        metrics = compute_fit_metrics(datasets, rss)
+        if metrics["tss"] < TSS_MIN_THRESHOLD:
+            warnings.warn(
+                "TSS is nearly zero; R² may be unreliable.",
+                UserWarning,
+                stacklevel=2,
+            )
+        if verbose:
+            print(
+                f"Residual sum of squares: {metrics['rss']:.6g}  "
+                f"R²: {metrics['r2']:.6g}"
+            )
+        return metrics
+
 
     # Plot results
     def solution_plot(
