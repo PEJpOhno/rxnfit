@@ -28,6 +28,43 @@ from .expdata_reader import (
 from .fit_metrics import fit_metrics as compute_fit_metrics
 from .fit_metrics import TSS_MIN_THRESHOLD
 from .rate_const_ft_eval import has_time_dependent_rates, build_evaluator
+from .solv_ode import _ode_result_to_dataframe, _plot_time_course_solutions
+
+from typing import Optional, List, Union
+
+import pandas as pd
+
+
+def _resolve_df_names(df_list, df_names=None):
+    """Resolve dataset names from df_names or DataFrame.attrs['name'].
+
+    When df_names is None, uses df.attrs.get('name') for each DataFrame if
+    present and non-empty; otherwise falls back to str(i).
+
+    Args:
+        df_list: List of DataFrames.
+        df_names: Optional list of names. If provided, must match len(df_list).
+
+    Returns:
+        list[str]: Resolved names for each DataFrame.
+
+    Raises:
+        ValueError: If df_names is provided and len(df_names) != len(df_list).
+    """
+    if df_names is not None:
+        if len(df_names) != len(df_list):
+            raise ValueError(
+                f"len(df_names)={len(df_names)} must match len(df_list)={len(df_list)}."
+            )
+        return list(df_names)
+    result = []
+    for i, df in enumerate(df_list):
+        name = getattr(df, 'attrs', {}).get('name')
+        if isinstance(name, str) and name.strip():
+            result.append(name.strip())
+        else:
+            result.append(str(i))
+    return result
 
 
 def _eval_ode_fit(t, *params, fit_ctx):
@@ -100,21 +137,18 @@ def _eval_ode_fit(t, *params, fit_ctx):
         raise
 
 
-def _compute_multi_residual(params, fit_ctx):
-    """Compute sum of squared residuals across all datasets.
-
-    Core logic for multi-dataset fitting. Used by solve_fit_model_multi.
+def _integrate_datasets_for_params(fit_ctx, params):
+    """Integrate ODE for each dataset with given params.
 
     Args:
-        params (list): Symbolic rate constant values in
-            symbolic_rate_const_keys order.
-        fit_ctx (dict): Context with fixed_rate_consts,
-            symbolic_rate_const_keys, ode_functions_with_rate_consts,
-            function_names, datasets,
-            t_span, method, rtol.
+        fit_ctx (dict): Context with fixed_rate_consts, symbolic_rate_const_keys,
+            ode_functions_with_rate_consts, function_names, datasets,
+            t_span, method, rtol. Optionally 'evaluator' for k(t).
+        params (list): Symbolic rate constant values in symbolic_rate_const_keys order.
 
     Returns:
-        float: Sum of squared residuals, or np.inf on integration failure.
+        list: Length len(fit_ctx['datasets']). Each element is OdeResult or None.
+            None for failed integrations.
     """
     fixed_rate_consts = fit_ctx['fixed_rate_consts']
     symbolic_rate_const_keys = fit_ctx['symbolic_rate_const_keys']
@@ -145,30 +179,64 @@ def _compute_multi_residual(params, fit_ctx):
         symbolic_rate_const_keys=symbolic_rate_const_keys
     )
 
-    total_residual = 0.0
+    solution_list = []
     for ds in datasets:
         y0 = ds['y0']
         t_list = ds['t_list']
-        C_exp_list = ds['C_exp_list']
-
-        t_all = np.unique(np.concatenate(t_list))
-        t_start = ds['t0']  # 1行目の時間を積分の初期時刻として使用
+        t_exp = np.unique(np.concatenate(t_list))
+        t_start = ds['t0']
         t_span_ds = (t_start, t_span[1])
+        # プロットの角張りを防ぐため、密な t_eval を使用（残差計算は np.interp で補間）
+        n_dense = max(100, len(t_exp) * 10)
+        t_dense = np.linspace(t_start, t_span[1], n_dense)
+        t_eval = np.sort(np.unique(np.concatenate([t_exp, t_dense])))
 
         try:
             solution = solve_ivp(
                 system_rhs,
                 t_span_ds,
                 y0,
-                t_eval=t_all,
+                t_eval=t_eval,
                 method=method,
                 rtol=rtol
             )
             if not solution.success:
-                return np.inf
+                solution_list.append(None)
+            else:
+                solution_list.append(solution)
         except Exception:
-            return np.inf
+            solution_list.append(None)
 
+    return solution_list
+
+
+def _compute_multi_residual(params, fit_ctx):
+    """Compute sum of squared residuals across all datasets.
+
+    Core logic for multi-dataset fitting. Used by solve_fit_model_multi.
+
+    Args:
+        params (list): Symbolic rate constant values in
+            symbolic_rate_const_keys order.
+        fit_ctx (dict): Context with fixed_rate_consts,
+            symbolic_rate_const_keys, ode_functions_with_rate_consts,
+            function_names, datasets,
+            t_span, method, rtol.
+
+    Returns:
+        float: Sum of squared residuals, or np.inf on integration failure.
+    """
+    function_names = fit_ctx['function_names']
+    datasets = fit_ctx['datasets']
+
+    solution_list = _integrate_datasets_for_params(fit_ctx, params)
+    if any(sol is None for sol in solution_list):
+        return np.inf
+
+    total_residual = 0.0
+    for solution, ds in zip(solution_list, datasets):
+        t_list = ds['t_list']
+        C_exp_list = ds['C_exp_list']
         for i in range(len(function_names)):
             t_i = t_list[i]
             C_i = C_exp_list[i]
@@ -256,7 +324,7 @@ def solve_fit_model(
 
 def solve_fit_model_multi(
         builded_rxnode, df_list, t_span,
-        method="RK45", rtol=1e-6):
+        method="RK45", rtol=1e-6, df_names=None):
     """Create residual function for multi-dataset fitting (varying y0).
 
     y0 and the initial time (t0) for each dataset are taken from the first
@@ -275,6 +343,9 @@ def solve_fit_model_multi(
             Defaults to "RK45".
         rtol (float, optional): Relative tolerance for solve_ivp.
             Defaults to 1e-6.
+        df_names (list[str], optional): Names for each DataFrame. If None,
+            uses df.attrs.get('name') for each when present and non-empty;
+            otherwise str(i). Length must match len(df_list) when provided.
 
     Returns:
         tuple:
@@ -290,6 +361,8 @@ def solve_fit_model_multi(
     """
     if not df_list:
         raise ValueError("df_list cannot be empty.")
+
+    resolved_df_names = _resolve_df_names(df_list, df_names)
 
     ode_construct = builded_rxnode.get_ode_system()
     (_, _, _, function_names, rate_consts_dict) = ode_construct
@@ -323,6 +396,7 @@ def solve_fit_model_multi(
         'ode_functions_with_rate_consts': ode_functions_with_rate_consts,
         'function_names': function_names,
         'datasets': datasets,
+        'df_names': resolved_df_names,
         't_span': t_span,
         'method': method,
         'rtol': rtol,
@@ -399,7 +473,7 @@ class ExpDataFitSci:
     """
 
     def __init__(self, builded_rxnode, df_list, t_range,
-                 method="RK45", rtol=1e-6):
+                 method="RK45", rtol=1e-6, df_names=None):
         """Initialize the fitting context.
 
         Args:
@@ -413,14 +487,21 @@ class ExpDataFitSci:
                 Defaults to "RK45".
             rtol (float, optional): Relative tolerance for solve_ivp.
                 Defaults to 1e-6.
+            df_names (list[str], optional): Names for each DataFrame, used by
+                plot_fitted_solution(plot_datasets=[...]). If None, uses
+                df.attrs.get('name') for each DataFrame when present and
+                non-empty; otherwise falls back to str(i). Length must match
+                len(df_list) when provided.
         """
         self.builded_rxnode = builded_rxnode
         self.df_list = df_list
         self.t_range = t_range
         self.method = method
         self.rtol = rtol
+        self.df_names = _resolve_df_names(df_list, df_names)
         self._param_info = None
         self._result = None
+        self._fit_ctx = None
 
     def run_fit(self, p0, opt_method='L-BFGS-B', bounds=None, verbose=True,
                 use_log_fit=False, lower_bound=None):
@@ -467,8 +548,9 @@ class ExpDataFitSci:
         """
         residual_func, param_info, fit_ctx = solve_fit_model_multi(
             self.builded_rxnode, self.df_list, self.t_range,
-            method=self.method, rtol=self.rtol
+            method=self.method, rtol=self.rtol, df_names=self.df_names
         )
+        self._fit_ctx = fit_ctx
 
         n_params = param_info['n_params']
         p0 = _normalize_p0(p0, param_info)
@@ -588,12 +670,10 @@ class ExpDataFitSci:
                 rate_const_values, symbolic_rate_const_keys when k(t) present.
 
         Raises:
-            RuntimeError: If run_fit has not been called, or if the model
-                has k(t) and run_fit has not been called (with message
-                asking to call get_solver_config_args() only after run_fit()).
+            RuntimeError: If run_fit not executed.
         """
         if self._param_info is None:
-            raise RuntimeError("run_fit must be called first.")
+            raise RuntimeError("run_fit not executed")
         y0 = self._param_info['y0_list'][dataset_index]
         t0 = self._param_info['t0_list'][dataset_index]
         out = {
@@ -604,12 +684,7 @@ class ExpDataFitSci:
         }
         if has_time_dependent_rates(self.builded_rxnode.rate_consts_dict):
             if self._result is None:
-                raise RuntimeError(
-                    "For models with time-dependent rate constants k(t), "
-                    "call get_solver_config_args() only after run_fit(). "
-                    "Speed constant information could not be set on "
-                    "SolverConfig because run_fit() has not been run yet."
-                )
+                raise RuntimeError("run_fit not executed")
             fixed_rate_consts = {
                 k: float(v) for k, v in self.builded_rxnode.rate_consts_dict.items()
                 if isinstance(v, (int, float))
@@ -639,17 +714,126 @@ class ExpDataFitSci:
                 builded_rxnode.rate_consts_dict.
 
         Raises:
-            RuntimeError: If result is None and run_fit has not been called.
+            RuntimeError: If run_fit not executed.
         """
         res = result if result is not None else self._result
         if res is None or self._param_info is None:
-            raise RuntimeError("run_fit must be called first.")
+            raise RuntimeError("run_fit not executed")
         symbolic_keys = self._param_info['symbolic_rate_consts']
         return dict(zip(symbolic_keys, res.x))
 
+    def plot_fitted_solution(
+        self,
+        expdata_df: Optional[Union[pd.DataFrame, List[pd.DataFrame]]] = None,
+        plot_datasets: Optional[List[str]] = None,
+        species: Optional[List[str]] = None,
+        subplot_layout: Optional[tuple] = None,
+    ):
+        """Plot fitted time-course with per-dataset y0.
+
+        Use after run_fit. Each subplot uses the y0 from the corresponding
+        DataFrame's first row. When expdata_df is None, uses self.df_list
+        for experimental overlay. When plot_datasets is given, only those
+        datasets are plotted (by df_names).
+
+        Args:
+            expdata_df: Experimental data for overlay. Single DataFrame or
+                list. If None, uses self.df_list (fit data). When
+                plot_datasets is given, length must match len(plot_datasets);
+                otherwise must match n_datasets.
+            plot_datasets: List of dataset names (from df_names) to plot.
+                If None, all datasets are plotted.
+            species: Species to plot. If None, all.
+            subplot_layout: (n_rows, n_cols) for subplot grid.
+
+        Raises:
+            RuntimeError: If run_fit not executed.
+            ValueError: If length/column mismatch or unknown plot_datasets name.
+        """
+        if self._param_info is None or self._result is None or self._fit_ctx is None:
+            raise RuntimeError("run_fit not executed")
+
+        n_datasets = len(self._fit_ctx['datasets'])
+        df_names = self._fit_ctx.get(
+            'df_names', [str(i) for i in range(n_datasets)]
+        )
+
+        # プロット対象のインデックス
+        if plot_datasets is not None:
+            name_to_idx = {name: i for i, name in enumerate(df_names)}
+            for name in plot_datasets:
+                if name not in name_to_idx:
+                    raise ValueError(
+                        f"plot_datasets: '{name}' not in df_names {df_names}"
+                    )
+            plot_indices = [name_to_idx[name] for name in plot_datasets]
+        else:
+            plot_indices = list(range(n_datasets))
+
+        n_plot = len(plot_indices)
+
+        # 実験データのオーバーレイ用 df_list
+        if expdata_df is None:
+            df_list_filtered = [self.df_list[i] for i in plot_indices]
+        else:
+            df_list_arg = expdata_df if isinstance(expdata_df, list) else [expdata_df]
+            if len(df_list_arg) != n_plot:
+                raise ValueError(
+                    f"Length mismatch: expdata_df has {len(df_list_arg)} "
+                    f"elements but {n_plot} datasets to plot."
+                )
+            df_list_filtered = df_list_arg
+        for df in df_list_filtered:
+            for name in self._param_info['function_names']:
+                if name not in df.columns:
+                    raise ValueError(
+                        f"Column '{name}' not found in DataFrame. "
+                        f"Required: {self._param_info['function_names']}"
+                    )
+
+        solution_list_full = _integrate_datasets_for_params(
+            self._fit_ctx, list(self._result.x)
+        )
+        solution_list = [solution_list_full[i] for i in plot_indices]
+
+        _plot_time_course_solutions(
+            solution_list,
+            df_list_filtered,
+            self._param_info['function_names'],
+            species=species,
+            subplot_layout=subplot_layout,
+        )
+
+    def to_dataframe_list(self, time_column_name="time"):
+        """Return fitted solutions as list of DataFrames.
+
+        Use after run_fit. One DataFrame per dataset; failed integrations
+        yield None at that index.
+
+        Returns:
+            list: Length = n_datasets. Each element is pd.DataFrame or None.
+
+        Raises:
+            RuntimeError: If run_fit not executed.
+        """
+        if self._param_info is None or self._result is None or self._fit_ctx is None:
+            raise RuntimeError("run_fit not executed")
+
+        solution_list = _integrate_datasets_for_params(
+            self._fit_ctx, list(self._result.x)
+        )
+        names = self._param_info['function_names']
+        result = []
+        for sol in solution_list:
+            if sol is None:
+                result.append(None)
+            else:
+                result.append(_ode_result_to_dataframe(sol, names, time_column_name))
+        return result
+
 
 def run_fit_multi(builded_rxnode, df_list, p0, t_range=None,
-                  method="RK45", rtol=1e-6,
+                  method="RK45", rtol=1e-6, df_names=None,
                   opt_method='L-BFGS-B', bounds=None, verbose=True,
                   use_log_fit=False, lower_bound=None):
     """Convenience wrapper around ExpDataFitSci.run_fit.
@@ -669,6 +853,8 @@ def run_fit_multi(builded_rxnode, df_list, p0, t_range=None,
         t_range (tuple[float, float], optional): Integration time span
             (t_start, t_end). If None, derives from first DataFrame.
             Defaults to None.
+        df_names (list[str], optional): Names for each DataFrame. If None,
+            uses df.attrs.get('name') when present; else str(i).
         method (str, optional): Integration method for solve_ivp.
             Defaults to "RK45".
         rtol (float, optional): Relative tolerance for solve_ivp.
@@ -703,7 +889,8 @@ def run_fit_multi(builded_rxnode, df_list, p0, t_range=None,
             float(df_list[0].iloc[:, 0].max())
         )
     fit_sci = ExpDataFitSci(
-        builded_rxnode, df_list, t_range, method=method, rtol=rtol
+        builded_rxnode, df_list, t_range,
+        method=method, rtol=rtol, df_names=df_names
     )
     return fit_sci.run_fit(
         p0,

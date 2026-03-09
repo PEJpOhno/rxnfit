@@ -83,6 +83,7 @@ class P0OptFit:
         t_range: Optional[Tuple[float, float]] = None,
         encoding: str = "utf-8",
         param_bounds: Optional[Union[Tuple[float, float], Dict[str, Tuple[float, float]]]] = None,
+        df_names: Optional[List[str]] = None,
         method: str = "RK45",
         rtol: float = 1e-6,
         opt_method: str = "L-BFGS-B",
@@ -101,6 +102,8 @@ class P0OptFit:
             t_range: Integration time span (t_start, t_end). If None, (0, max of first column).
             encoding: Encoding for reaction CSV when reaction_source is a path. Default utf-8.
             param_bounds: (low, high) for all params, or dict {name: (low, high)}. Default (1e-8, 1e2).
+            df_names: Names for each DataFrame (for plot_fitted_solution).
+                If None, uses df.attrs.get('name') when present; else str(i).
             method: Integration method for solve_ivp. Default "RK45".
             rtol: Relative tolerance for solve_ivp. Default 1e-6.
             opt_method: scipy.optimize.minimize method for run_fit. Default "L-BFGS-B".
@@ -136,6 +139,7 @@ class P0OptFit:
             )
         self._symbolic_keys = symbolic_keys
         self._bounds_per_param = _resolve_param_bounds(param_bounds, symbolic_keys)
+        self._df_names = df_names
 
         self._method = method
         self._rtol = rtol
@@ -168,6 +172,7 @@ class P0OptFit:
             self._t_range,
             method=self._method,
             rtol=self._rtol,
+            df_names=self._df_names,
         )
         result, _, fit_metrics_ret = fit.run_fit(
             p0,
@@ -240,6 +245,7 @@ class P0OptFit:
             self._t_range,
             method=self._method,
             rtol=self._rtol,
+            df_names=self._df_names,
         )
         result, _, fit_metrics_ret = fit.run_fit(
             p0_best,

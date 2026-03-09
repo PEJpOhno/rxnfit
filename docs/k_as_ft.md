@@ -92,7 +92,7 @@
 
 - `rss()` など積分を行うメソッドも、config に rate が指定されているときは  
   **速度定数つき ODE 経路** を使う。  
-  （注: 現在は `rss` は廃止され、**goodness_of_fit(expdata_df, ...)** が RSS・TSS・R² を返す。）
+  （注: 現在は `rss` は廃止され、**eval_fit_metrics(expdata_df, ...)** が RSS・TSS・R² を返す。）
 
 ---
 

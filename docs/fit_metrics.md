@@ -1,4 +1,4 @@
-# RSS / R² 併記（goodness_of_fit）仕様 — 決定事項と詳細
+# RSS / R² 併記（eval_fit_metrics）仕様 — 決定事項と詳細
 
 `rss` を廃止し、経時変化 vs 実験データに対して RSS と R² を返す API を統一する方針。以下に決定事項と、戻り値・run_fit まわりの詳細をまとめる。
 
@@ -13,7 +13,7 @@
 | 3 | 有効点の一致 | **明文化する**（後述の仕様文を採用） |
 | 5 | TSS ≈ 0 のとき | **警告のみ**出し、R² は計算して返す |
 | 6 | 重みづけ | R² は将来 **重み付き RSS/TSS** で定義する予定。**現状は重みなし**で仕様化 |
-| 8 | goodness_of_fit のオプション | 現在の `rss` の **recompute をそのまま持たせる** |
+| 8 | eval_fit_metrics のオプション | 現在の `rss` の **recompute をそのまま持たせる** |
 | 9 | P0OptFit.optimize の戻り値 | **提案通り** `(out_dict, fit_metrics)`。fit_metrics は dict でキー `'rss'`, `'tss'`, `'r2'` を含む。 |
 
 ---
@@ -44,12 +44,12 @@
 
 ## 4. 戻り値の型 — 「何を決める話か」の詳細説明
 
-ここで言う「戻り値の型」は、**RSS・TSS・R² を呼び出し側に返すとき、それらを「どういうデータ構造で渡すか」**を指しています。goodness_of_fit を呼んだあと、ユーザーが `rss` や `r2` にどうアクセスするかは、この型によって決まります。
+ここで言う「戻り値の型」は、**RSS・TSS・R² を呼び出し側に返すとき、それらを「どういうデータ構造で渡すか」**を指しています。eval_fit_metrics を呼んだあと、ユーザーが `rss` や `r2` にどうアクセスするかは、この型によって決まります。
 
 ### 4.1 何が「戻り値」になるか
 
 - **solv_ode**  
-  `goodness_of_fit(expdata_df)` は、解いた経時変化と実験データを比較した結果として、RSS・TSS・R² の 3 つ（以上）を返す必要があります。これらはまとめて 1 つの「戻り値」として返す想定です。
+  `eval_fit_metrics(expdata_df)` は、解いた経時変化と実験データを比較した結果として、RSS・TSS・R² の 3 つ（以上）を返す必要があります。これらはまとめて 1 つの「戻り値」として返す想定です。
 - **run_fit**  
   戻りは現状 `(result, param_info)` の 2 つ。RSS は `result.fun` で参照しています。R² を「返す」ということは、この 2 つのどちらか（または両方）に R² を載せるか、あるいは戻り値を増やすか、という話になります（これは 7 で扱う「格納先」に直結します）。
 - **P0OptFit.optimize**  
@@ -61,7 +61,7 @@
 
 - **dict** は、キーと値の対応で複数の値を保持する型です。
 - 例: `{"rss": 0.012, "tss": 0.45, "r2": 0.973}`。
-- 呼び出し側は `metrics = solver.goodness_of_fit(df)` のあと、`metrics['rss']` や `metrics['r2']` でアクセスします。キー名を文字列で書くため、`'r2'` を `'r2'` と typo すると実行時まで気づかないことがあります。
+- 呼び出し側は `metrics = solver.eval_fit_metrics(df)` のあと、`metrics['rss']` や `metrics['r2']` でアクセスします。キー名を文字列で書くため、`'r2'` を `'r2'` と typo すると実行時まで気づかないことがあります。
 - 一方で、新しい指標を足すときは `metrics['n_points'] = ...` のようにキーを増やすだけでよく、関数の戻り値の「形」を変えずに拡張できます。また、`metrics` をそのまま JSON にしたりログに書き出したりしやすい、という意味があります。
 
 ### 4.3 NamedTuple で返すとはどういう意味か
@@ -73,9 +73,9 @@
 ### 4.4 他 API との「形の揃い方」という意味
 
 - **optimize** の第二戻り値を `(out_dict, {"rss": rss, "r2": r2})` にする、と決まっています。つまり「RSS と R² のまとまり」はすでに **dict** で返す形になっています。
-- すると、goodness_of_fit の戻りも dict にすると、「RSS と R² の塊」を同じ型で扱えます。run_fit で R² を param_info に載せる場合、param_info はもともと dict なので、`param_info['r2']` のようにキーでアクセスすることになります。  
+- すると、eval_fit_metrics の戻りも dict にすると、「RSS と R² の塊」を同じ型で扱えます。run_fit で R² を param_info に載せる場合、param_info はもともと dict なので、`param_info['r2']` のようにキーでアクセスすることになります。  
   つまり、**「まとまり」を dict にすると、optimize の第二戻り値・param_info の使い方と揃う**という意味があります。
-- 逆に、goodness_of_fit だけ NamedTuple で返すと、optimize の第二戻り値は dict のままなので、「RSS・R² の塊」が API ごとに dict だったり NamedTuple だったりすることになります。揃えるなら、optimize の第二戻り値も NamedTuple にするか、goodness_of_fit も dict にするか、のどちらかになります。
+- 逆に、eval_fit_metrics だけ NamedTuple で返すと、optimize の第二戻り値は dict のままなので、「RSS・R² の塊」が API ごとに dict だったり NamedTuple だったりすることになります。揃えるなら、optimize の第二戻り値も NamedTuple にするか、eval_fit_metrics も dict にするか、のどちらかになります。
 
 ### 4.5 まとめ（意味の説明のみ。仕様の決定はこのあと）
 
@@ -131,7 +131,7 @@ TSS は、fit_ctx に入っている `datasets`（各データセットの `t_li
 
 - **どの関数で計算するか**  
   TSS の計算ロジックを、run_fit のなかに直接書くか、それとも「datasets とオプション（化学種ごと平均など）を受け取って TSS を返す関数」として別に切り出すか、という意味です。  
-  別関数にすると、単体テストしやすく、solv_ode 側の goodness_of_fit からも同じ関数を呼べる可能性があります。run_fit 内に直書きすると、流れは追いやすいが、他と共有するにはあとで関数に抽出する必要があります。
+  別関数にすると、単体テストしやすく、solv_ode 側の eval_fit_metrics からも同じ関数を呼べる可能性があります。run_fit 内に直書きすると、流れは追いやすいが、他と共有するにはあとで関数に抽出する必要があります。
 
 つまり、「TSS 計算場所」は **「run_fit のどのタイミングで TSS を計算するか」** と **「その計算を run_fit 内に書くか、共通関数として切り出すか」** の両方を含みます。
 
@@ -185,9 +185,9 @@ run_fit の処理の流れで言うと、次のようになります。
 
 ---
 
-## 8. goodness_of_fit のオプション（決定：recompute をそのまま持たせる）
+## 8. eval_fit_metrics のオプション（決定：recompute をそのまま持たせる）
 
-- 新 API（goodness_of_fit）でも、現在の `rss` と同様に **recompute** 引数をそのまま持たせる。  
+- 新 API（eval_fit_metrics）でも、現在の `rss` と同様に **recompute** 引数をそのまま持たせる。  
 - recompute=True のときは実験時点で再積分して RSS を計算、recompute=False のときは既存 solution を補間して RSS を計算。TSS は実験データのみから求めるため recompute に依存しない。
 
 ---
@@ -207,6 +207,6 @@ run_fit の処理の流れで言うと、次のようになります。
 - **戻り値の型**: dict（キー `rss`, `tss`, `r2`）。
 - **共通化**: 新モジュール **fit_metrics.py** に `fit_metrics(datasets, rss)` と `expdata_df_to_datasets(expdata_df, function_names)` を配置。TSS は化学種ごと平均。
 - **run_fit / run_fit_multi**: 戻り値を **3 つ** `(result, param_info, fit_metrics)` に変更。result に属性 `tss`, `r2` を追加（RSS は result.fun のみ）。verbose は `fit_metrics['rss']` と `fit_metrics['r2']` を参照。
-- **solv_ode**: 従来の `rss` を廃止し、**goodness_of_fit(expdata_df, ...)** メソッドで dict を返す。recompute オプションは維持。
+- **solv_ode**: 従来の `rss` を廃止し、**eval_fit_metrics(expdata_df, ...)** メソッドで dict を返す。recompute オプションは維持。
 - **P0OptFit.optimize**: 戻り値を `(out_dict, fit_metrics)` に変更。
-- **TSS≈0 の警告**: 呼び出し側（run_fit 内・solv_ode の goodness_of_fit 内）で `warnings.warn` を実行。
+- **TSS≈0 の警告**: 呼び出し側（run_fit 内・solv_ode の eval_fit_metrics 内）で `warnings.warn` を実行。

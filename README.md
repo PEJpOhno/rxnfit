@@ -8,7 +8,7 @@
 
 
 ## 2. Current version and requirements
-- current version = 0.1.0
+- current version = 0.2.0
 - pyhon >=3.12
 
 [dependencies]
@@ -89,7 +89,7 @@ Fits symbolic rate constants to experimental data (scipy.optimize.minimize).
 
 | item | name | description |
 |------|------|-------------|
-| class | ExpDataFitSci | Multi-dataset fitting. run_fit(p0, ...) returns (result, param_info, fit_metrics). result has .fun (RSS), .tss, .r2; fit_metrics is dict with keys 'rss', 'tss', 'r2'. get_solver_config_args(dataset_index), get_fitted_rate_const_dict(result). When model has k(t), get_solver_config_args() adds rate_const_values (callable) and symbolic_rate_const_keys after run_fit(). |
+| class | ExpDataFitSci | Multi-dataset fitting. run_fit(p0, ...) returns (result, param_info, fit_metrics). result has .fun (RSS), .tss, .r2; fit_metrics is dict with keys 'rss', 'tss', 'r2'. get_solver_config_args(dataset_index), get_fitted_rate_const_dict(result). plot_fitted_solution(expdata_df, ...) plots per-dataset y0 curves after run_fit. to_dataframe_list() returns list of DataFrames (one per dataset). When model has k(t), get_solver_config_args() adds rate_const_values (callable) and symbolic_rate_const_keys after run_fit(). |
 
 ### 6-5. solv_ode
 Numerical integration and plotting of ODE solutions.
@@ -97,7 +97,7 @@ Numerical integration and plotting of ODE solutions.
 | item | name | description |
 |------|------|-------------|
 | class | SolverConfig | Dataclass: y0, t_span, t_eval, method, rtol. Optional: rate_const_values (dict or callable(t)), symbolic_rate_const_keys (both or neither). |
-| class | RxnODEsolver | Integrates ODE with builder and config. solve_system(), to_dataframe(), goodness_of_fit(expdata_df, ...) returning dict with 'rss', 'tss', 'r2', solution_plot(). When config has rate_const_values and symbolic_rate_const_keys, uses rate-constants ODE path. |
+| class | RxnODEsolver | Integrates ODE with builder and config. solve_system(), to_dataframe_list() returning list of DataFrames, eval_fit_metrics(expdata_df, ...) returning dict with 'rss', 'tss', 'r2', solution_plot(). When config has rate_const_values and symbolic_rate_const_keys, uses rate-constants ODE path. |
 
 ### 6-6. p0_opt_fit
 Optimizes initial parameter values (p0) for rate constants using Optuna, then fits with ExpDataFitSci.
