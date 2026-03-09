@@ -109,8 +109,8 @@ def get_time_unit_from_expdata(df_list):
     names_0 = [df.columns[0] for df in df_list]
     if len(set(names_0)) > 1:
         warnings.warn(
-            f"経時変化データの0列目（時間列）の列名が一致しません: {names_0}. "
-            "先頭のDataFrameの列名を用います。",
+            f"Time column (0th) names differ across DataFrames: {names_0}. "
+            "Using the first DataFrame's column name.",
             UserWarning,
             stacklevel=2,
         )
@@ -176,7 +176,7 @@ def get_y0_from_expdata(df_list, function_names):
                 y0.append(0.0 if pd.isna(val) else float(val))
             else:
                 raise ValueError(
-                    f"化学種 '{name}' がデータの列に見つかりません。"
+                    f"Species '{name}' not found in DataFrame columns."
                 )
         y0_list.append(y0)
 
@@ -209,7 +209,7 @@ def align_expdata_to_function_names(
     for name in function_names:
         i = col_to_idx.get(name)
         if i is None:
-            raise ValueError(f"化学種 '{name}' がデータの列にありません。")
+            raise ValueError(f"Species '{name}' is not in the data columns.")
         t_aligned.append(t_list[i])
         C_aligned.append(C_exp_list[i])
     return t_aligned, C_aligned

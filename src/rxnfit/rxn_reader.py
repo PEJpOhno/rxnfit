@@ -186,10 +186,14 @@ def reactant_consumption(reaction_equation):
     That is,
     -d[A]/dt = -(a/b)d[B]/dt = (a/c)d[C]/dt = (a/d)d[D]/dt
 
+    For products-only reactions (e.g. -> C), the rate is zero-order:
+    v = k, d[C]/dt = k.
+
     Args:
         reaction_equation (list): A list representing a reaction equation
             in the format [['ID', rate_constant], [[coeff, reactant1], ...],
             [[coeff, product1], ...]]. rate_constant may be float or str.
+            Reactants may be empty for zero-order formation.
 
     Returns:
         list: The input reaction_equation list extended with:
@@ -209,7 +213,13 @@ def reactant_consumption(reaction_equation):
     reactant_equation = "*".join(terms)
     coef_kinetics = [reactant_equation, ]
 
-    standard_val = reaction_equation[1][0][0]
+    # 反応物が空の場合は生成物のみ（ゼロ次反応）。standard_val は生成物から取得
+    if reaction_equation[1]:
+        standard_val = reaction_equation[1][0][0] or '1'
+    elif reaction_equation[2]:
+        standard_val = reaction_equation[2][0][0] or '1'
+    else:
+        standard_val = '1'
     for e in reaction_equation[1:3]:
         coef = [e2[0] + '/' + standard_val for e2 in e]
         coef = [e[:-1] if e.endswith('/') else e for e in coef]
@@ -356,14 +366,14 @@ def _build_rate_consts_sympy(raw_rate_consts):
         free_names = {str(sym) for sym in getattr(parsed, 'free_symbols', [])}
         if isinstance(parsed, Symbol) and parsed.name not in allowed_keys:
             raise ValueError(
-                "式の右辺に存在しない速度定数を指定しました: "
-                f"'{parsed.name}'. 使用可能な速度定数: {sorted(allowed_keys)}"
+                "Rate constant '{parsed.name}' in expression is not defined. "
+                f"Allowed rate constants: {sorted(allowed_keys)}"
             )
         if free_names and not free_names.issubset(allowed_keys):
             undefined = free_names - allowed_keys
             raise ValueError(
-                "式の右辺に存在しない速度定数を指定しました: "
-                f"{undefined}. 使用可能な速度定数: {sorted(allowed_keys)}"
+                f"Rate constants {undefined} in expression are not defined. "
+                f"Allowed: {sorted(allowed_keys)}"
             )
         result[key] = parsed
     return result

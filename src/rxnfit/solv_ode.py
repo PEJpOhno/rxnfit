@@ -22,6 +22,25 @@ from scipy.integrate import solve_ivp
 
 from .build_ode import RxnODEbuild, create_system_rhs
 from .expdata_reader import get_time_unit_from_expdata
+from .fit_metrics import fit_metrics as compute_fit_metrics
+from .fit_metrics import expdata_df_to_datasets, TSS_MIN_THRESHOLD
+
+
+def _ode_result_to_dataframe(sol, names, time_column_name="time"):
+    """Convert OdeResult to a single DataFrame.
+
+    Args:
+        sol: scipy.integrate.OdeResult from solve_ivp.
+        names: List of species names (function_names order).
+        time_column_name: Name for the time column. Default "time".
+
+    Returns:
+        pd.DataFrame: Time in first column, species concentrations in rest.
+    """
+    data = {time_column_name: sol.t}
+    for i, name in enumerate(names):
+        data[name] = sol.y[i]
+    return pd.DataFrame(data)
 
 
 @dataclass
@@ -58,8 +77,9 @@ class RxnODEsolver:
     """Solver for ODE systems representing chemical reaction kinetics.
     
     This class integrates ODE systems using scipy.solve_ivp and provides
-    methods to visualize the time evolution of chemical species.
-    
+    methods to visualize the time evolution of chemical species and to
+    compare the solution with experimental data (eval_fit_metrics).
+
     Attributes:
         builder (RxnODEbuild): The ODE builder instance containing the
             reaction system definition.
@@ -192,8 +212,11 @@ class RxnODEsolver:
         self.solution = solution
         return ode_construct, solution
 
-    def to_dataframe(self, solution=None, time_column_name="time"):
-        """Return the solution as a DataFrame (time as rows, species as columns).
+    def to_dataframe_list(self, solution=None, time_column_name="time"):
+        """Return the solution(s) as a list of DataFrames.
+
+        Works for both single and multiple datasets. Always returns a list;
+        single solution yields a 1-element list.
 
         Args:
             solution (scipy.integrate.OdeResult, optional): Solution to
@@ -203,9 +226,9 @@ class RxnODEsolver:
                 (first column). Defaults to "time".
 
         Returns:
-            pandas.DataFrame: One row per time point; first column is time,
-                following columns are species concentrations (names from
-                function_names).
+            list[pd.DataFrame]: One DataFrame per solution. Each has one row
+                per time point; first column is time, following columns are
+                species concentrations (names from function_names).
 
         Raises:
             RuntimeError: If no solution is available (solve_system not run).
@@ -216,40 +239,10 @@ class RxnODEsolver:
                 "No solution available. Call solve_system() first."
             )
         names = self.builder.function_names
-        data = {time_column_name: sol.t}
-        for i, name in enumerate(names):
-            data[name] = sol.y[i]
-        return pd.DataFrame(data)
+        return [_ode_result_to_dataframe(sol, names, time_column_name)]
 
-    def rsq(self, expdata_df, solution=None, verbose=True, recompute=True):
-        """Compute the sum of squared residuals at experimental time points.
-
-        When recompute=True (default), re-integrates the ODE at the valid
-        experimental time points and returns the sum of (observed - model)^2.
-        When recompute=False, interpolates the existing solution at
-        experimental times to compute the residual. NaNs in the data are
-        excluded. Output format matches expdata_fit_sci.run_fit.
-
-        Args:
-            expdata_df (pandas.DataFrame): Time-course data. First column
-                is time; remaining columns are species concentrations.
-                Column names must match function_names.
-            solution (scipy.integrate.OdeResult, optional): Solution to use
-                when recompute=False. If None, uses the result of
-                solve_system(). Defaults to None.
-            verbose (bool, optional): If True, print the residual sum of
-                squares. Defaults to True.
-            recompute (bool, optional): If True, re-integrate at
-                experimental times to compute residuals. If False, use
-                interpolation. Defaults to True.
-
-        Returns:
-            float: Sum of squared residuals.
-
-        Raises:
-            RuntimeError: If no solution is available, or if recompute=True
-                but solve_system() has not been called.
-        """
+    def _compute_rss(self, expdata_df, solution=None, recompute=True):
+        """Compute RSS at experimental time points (internal)."""
         if recompute:
             if self.ode_construct is None:
                 raise RuntimeError(
@@ -300,7 +293,7 @@ class RxnODEsolver:
                     UserWarning,
                     stacklevel=2,
                 )
-                return self._rsq_interp(expdata_df, solution, verbose)
+                return self._compute_rss_interp(expdata_df, solution)
             time_to_idx = {float(t): idx for idx, t in enumerate(sol_new.t)}
             names = self.builder.function_names
             name_to_idx = {name: i for i, name in enumerate(names)}
@@ -317,17 +310,12 @@ class RxnODEsolver:
                     t_j = float(t_j)
                     idx = time_to_idx[t_j]
                     rss += (c_exp[j] - sol_new.y[i][idx]) ** 2
-            if verbose:
-                print(f"Residual sum of squares: {rss:.6g}")
             return float(rss)
 
-        return self._rsq_interp(expdata_df, solution, verbose)
+        return self._compute_rss_interp(expdata_df, solution)
 
-    def _rsq_interp(self, expdata_df, solution=None, verbose=True):
-        """Compute sum of squared residuals by interpolating the solution.
-
-        Used when rsq is called with recompute=False.
-        """
+    def _compute_rss_interp(self, expdata_df, solution=None):
+        """Compute RSS by interpolating the solution (internal)."""
         sol = solution if solution is not None else self.solution
         if sol is None:
             raise RuntimeError(
@@ -349,11 +337,51 @@ class RxnODEsolver:
             c_m = c_exp[mask]
             c_model = np.interp(t_m, sol.t, sol.y[i])
             rss += np.sum((c_m - c_model) ** 2)
-        if verbose:
-            print(f"Residual sum of squares: {rss:.6g}")
         return float(rss)
 
-    # Plot results
+    def eval_fit_metrics(self, expdata_df, solution=None, verbose=True, recompute=True):
+        """Compute RSS, TSS, and R² for solution vs. experimental data.
+
+        Uses the same valid points for RSS and TSS (NaNs excluded).
+        TSS uses per-species means. R² = 1 - RSS/TSS.
+        Returns the same dict shape as fit_metrics.fit_metrics(datasets, rss).
+
+        Args:
+            expdata_df (pandas.DataFrame): Time-course data. First column
+                is time; remaining columns are species concentrations.
+                Column names must match function_names.
+            solution (scipy.integrate.OdeResult, optional): Solution to use
+                when recompute=False. If None, uses the result of
+                solve_system(). Defaults to None.
+            verbose (bool, optional): If True, print RSS and R².
+                Defaults to True.
+            recompute (bool, optional): If True, re-integrate at
+                experimental times for RSS. If False, use interpolation.
+                Defaults to True.
+
+        Returns:
+            dict: Keys 'rss', 'tss', 'r2' (all float).
+
+        Raises:
+            RuntimeError: If no solution is available, or if recompute=True
+                but solve_system() has not been called.
+        """
+        rss = self._compute_rss(expdata_df, solution, recompute)
+        datasets = expdata_df_to_datasets(expdata_df, self.builder.function_names)
+        metrics = compute_fit_metrics(datasets, rss)
+        if metrics["tss"] < TSS_MIN_THRESHOLD:
+            warnings.warn(
+                "TSS is nearly zero; R² may be unreliable.",
+                UserWarning,
+                stacklevel=2,
+            )
+        if verbose:
+            print(
+                f"Residual sum of squares: {metrics['rss']:.6g}  "
+                f"R²: {metrics['r2']:.6g}"
+            )
+        return metrics
+
     def solution_plot(
         self,
         solution=None,
@@ -362,7 +390,7 @@ class RxnODEsolver:
         subplot_layout: Optional[Tuple[int, int]] = None,
     ):
         """Plot the time evolution of chemical species.
-        
+
         Creates a time-course plot showing the simulated concentration of
         each species over time. Optionally overlays experimental data
         points with colors matching the simulation lines.
@@ -410,116 +438,143 @@ class RxnODEsolver:
                   "or pass a solution.")
             return
 
-        all_species = self.builder.function_names
-        if species is None:
-            plot_species = list(all_species)
-        else:
-            invalid = [s for s in species if s not in all_species]
-            if invalid:
-                warnings.warn(
-                    f"Species not in the ODE system: {invalid}. "
-                    f"Available: {all_species}. Please check the argument.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                raise ValueError(
-                    f"Species not in the ODE system: {invalid}. "
-                    f"Available: {all_species}"
-                )
-            plot_species = list(species)
-
-        # プロットする (名前, 解のインデックス) のリスト
-        name_to_idx = {name: i for i, name in enumerate(all_species)}
-        plot_items = [(name, name_to_idx[name]) for name in plot_species]
-
-        # expdata_df を正規化
         if expdata_df is not None:
             df_list = expdata_df if isinstance(expdata_df, list) else [expdata_df]
         else:
             df_list = []
 
-        multi_subplots = len(df_list) > 1
-        t_sol_min, t_sol_max = float(sol.t.min()), float(sol.t.max())
+        solution_list = [sol] * max(1, len(df_list))
+        _plot_time_course_solutions(
+            solution_list,
+            df_list,
+            self.builder.function_names,
+            species=species,
+            subplot_layout=subplot_layout,
+        )
 
-        print("\n=== Time-course plot ===")
 
-        if multi_subplots:
-            n_plots = len(df_list)
-            n_rows, n_cols = (
-                subplot_layout if subplot_layout is not None else (n_plots, 1)
+def _plot_time_course_solutions(
+    solution_list,
+    df_list,
+    function_names,
+    species=None,
+    subplot_layout=None,
+):
+    """Plot time-course solutions. Shared by solution_plot and plot_fitted_solution.
+
+    Args:
+        solution_list: List of OdeResult or None. Length must match df_list when
+            df_list is non-empty. When df_list is empty, uses solution_list as-is.
+        df_list: List of DataFrames for experimental overlay. Can be empty
+            (integrate curves only). When non-empty, len must equal len(solution_list).
+        function_names: List of species names in ODE order.
+        species: Optional list of species to plot. If None, all species.
+        subplot_layout: Optional (n_rows, n_cols). Default (n_plots, 1).
+    """
+    all_species = list(function_names)
+    if species is None:
+        plot_species = all_species
+    else:
+        invalid = [s for s in species if s not in all_species]
+        if invalid:
+            raise ValueError(
+                f"Species not in the ODE system: {invalid}. "
+                f"Available: {all_species}"
             )
-            fig, axes = plt.subplots(
-                n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows)
-            )
-            if n_rows == 1 and n_cols == 1:
-                axes = np.array([[axes]])
-            elif n_rows == 1 or n_cols == 1:
-                axes = axes.reshape(n_rows, n_cols)
+        plot_species = list(species)
 
-            for idx, (ax, plot_df) in enumerate(zip(axes.flat, df_list)):
-                for species_name, i in plot_items:
-                    line, = ax.plot(
-                        sol.t, sol.y[i], label=species_name, linewidth=2
-                    )
-                    color = line.get_color()
-                    if species_name in plot_df.columns:
-                        t_exp = plot_df.iloc[:, 0].to_numpy()
-                        c_exp = plot_df[species_name].to_numpy()
-                        mask = ~np.isnan(c_exp)
-                        ax.scatter(
-                            t_exp[mask], c_exp[mask],
-                            color=color, marker='o', s=50, zorder=5,
-                            edgecolors='white'
-                        )
-                ax.set_xlim(t_sol_min, t_sol_max)
-                time_unit = get_time_unit_from_expdata([plot_df])
-                xlabel = (
-                    f"Time ({time_unit})" if time_unit is not None
-                    else "Time ()"
+    name_to_idx = {name: i for i, name in enumerate(all_species)}
+    plot_items = [(name, name_to_idx[name]) for name in plot_species]
+
+    # Pad df_list when empty
+    if not df_list:
+        effective_df_list = [None] * len(solution_list)
+        time_unit = None
+    else:
+        if len(df_list) != len(solution_list):
+            raise ValueError(
+                f"Length mismatch: len(df_list)={len(df_list)}, "
+                f"len(solution_list)={len(solution_list)}"
+            )
+        effective_df_list = df_list
+        time_unit = get_time_unit_from_expdata(df_list)
+
+    valid_pairs = [
+        (idx, sol, plot_df)
+        for idx, (sol, plot_df) in enumerate(zip(solution_list, effective_df_list))
+        if sol is not None
+    ]
+    failed_pairs = [
+        (idx, plot_df)
+        for idx, (sol, plot_df) in enumerate(zip(solution_list, effective_df_list))
+        if sol is None
+    ]
+
+    for idx, plot_df in failed_pairs:
+        warnings.warn(
+            f"Integration failed for dataset {idx + 1}.",
+            UserWarning,
+            stacklevel=3,
+        )
+        if plot_df is not None:
+            print(f"  Failed DataFrame (dataset {idx + 1}):")
+            print(plot_df.head())
+
+    if not valid_pairs:
+        print("No successful integrations to plot.")
+        return
+
+    n_plots = len(valid_pairs)
+    n_rows, n_cols = (
+        subplot_layout if subplot_layout is not None else (n_plots, 1)
+    )
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows)
+    )
+    if n_rows == 1 and n_cols == 1:
+        axes = np.array([[axes]])
+    elif n_rows == 1 or n_cols == 1:
+        axes = axes.reshape(n_rows, n_cols)
+
+    t_min_all = min(float(sol.t.min()) for _, sol, _ in valid_pairs)
+    t_max_all = max(float(sol.t.max()) for _, sol, _ in valid_pairs)
+
+    print("\n=== Time-course plot ===")
+
+    for plot_idx, (orig_idx, sol, plot_df) in enumerate(valid_pairs):
+        ax = axes.flat[plot_idx]
+        for species_name, i in plot_items:
+            line, = ax.plot(
+                sol.t, sol.y[i], label=species_name, linewidth=2
+            )
+            color = line.get_color()
+            if plot_df is not None and species_name in plot_df.columns:
+                t_exp = plot_df.iloc[:, 0].to_numpy()
+                c_exp = plot_df[species_name].to_numpy()
+                mask = ~np.isnan(c_exp)
+                ax.scatter(
+                    t_exp[mask], c_exp[mask],
+                    color=color, marker='o', s=50, zorder=5,
+                    edgecolors='white'
                 )
-                ax.set_xlabel(xlabel, fontsize=12)
-                ax.set_ylabel('Concentration', fontsize=12)
-                ax.set_title(f'Dataset {idx + 1}', fontsize=14)
-                ax.legend(loc='best', fontsize=9)
-                ax.grid(True, alpha=0.3)
+        ax.set_xlim(t_min_all, t_max_all)
+        xlabel = (
+            f"Time ({time_unit})" if time_unit is not None
+            else "Time ()"
+        )
+        ax.set_xlabel(xlabel, fontsize=12)
+        ax.set_ylabel('Concentration', fontsize=12)
+        ax.set_title(f'Dataset {orig_idx + 1}', fontsize=14)
+        ax.legend(loc='best', fontsize=9)
+        ax.grid(True, alpha=0.3)
 
-            for idx in range(n_plots, axes.size):
-                axes.flat[idx].set_visible(False)
-            plt.tight_layout()
-            plt.show()
-        else:
-            plot_df = df_list[0] if df_list else None
-            time_unit = (
-                get_time_unit_from_expdata(df_list) if df_list else None
-            )
-            plt.figure(figsize=(12, 8))
-            ax = plt.gca()
+    for idx in range(n_plots, axes.size):
+        axes.flat[idx].set_visible(False)
+    plt.tight_layout()
+    plt.show()
 
-            for species_name, i in plot_items:
-                line, = ax.plot(sol.t, sol.y[i], label=species_name, linewidth=2)
-                color = line.get_color()
-                if plot_df is not None and species_name in plot_df.columns:
-                    t_exp = plot_df.iloc[:, 0].to_numpy()
-                    c_exp = plot_df[species_name].to_numpy()
-                    mask = ~np.isnan(c_exp)
-                    ax.scatter(
-                        t_exp[mask], c_exp[mask],
-                        color=color, marker='o', s=50, zorder=5, edgecolors='white'
-                    )
-
-            if plot_df is not None:
-                ax.set_xlim(t_sol_min, t_sol_max)
-
-            xlabel = f"Time ({time_unit})" if time_unit is not None else "Time ()"
-            plt.xlabel(xlabel, fontsize=12)
-            plt.ylabel('Concentration', fontsize=12)
-            plt.title('Chemical Reaction Kinetics - Sample Data', fontsize=14)
-            plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-            plt.grid(True, alpha=0.3)
-            plt.tight_layout()
-            plt.show()
-
-        # 描画した化学種についてのみ、最終時刻での濃度を表示
-        print("\n=== Concentration at the final time point ===")
+    print("\n=== Concentration at the final time point ===")
+    for orig_idx, sol, _ in valid_pairs:
+        print(f"Dataset {orig_idx + 1}:")
         for name, i in plot_items:
-            print(f"{name}: {sol.y[i][-1]:.6f}")
+            print(f"  {name}: {sol.y[i][-1]:.6f}")
