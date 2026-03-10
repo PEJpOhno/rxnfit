@@ -6,6 +6,7 @@
 - When some rate constants are unknown, they can be **estimated by fitting** the ODE solution to experimental concentration time-course data (e.g. with `scipy.optimize.minimize`).
 - A rate constant may be given as an **expression** in other rate constants (e.g. k₂ = 2·k₁), or as a **function of time** *t* via an override CSV.
 
+**Documentation :** https://pejpohno.github.io/rxnfit/ 
 
 ## 2. Current version and requirements
 - current version = 0.2.0
