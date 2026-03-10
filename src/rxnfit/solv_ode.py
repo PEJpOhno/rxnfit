@@ -1,0 +1,580 @@
+# Copyright (c) 2025 Mitsuru Ohno
+# Use of this source code is governed by a BSD-3-style
+# license that can be found in the LICENSE file.
+
+# 09/07/2025, M. Ohno
+
+"""
+Calculate and visualize the time evolution of chemical species
+based on reaction rate equations with all rate constants known.
+"""
+
+from dataclasses import dataclass, field
+from typing import Optional, List, Union, Callable, Dict, Tuple
+import sys
+import warnings
+from sympy import Basic as SympyBasic
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+
+from .build_ode import RxnODEbuild, create_system_rhs
+from .expdata_reader import get_time_unit_from_expdata
+from .fit_metrics import fit_metrics as compute_fit_metrics
+from .fit_metrics import expdata_df_to_datasets, TSS_MIN_THRESHOLD
+
+
+def _ode_result_to_dataframe(sol, names, time_column_name="time"):
+    """Convert OdeResult to a single DataFrame.
+
+    Args:
+        sol: scipy.integrate.OdeResult from solve_ivp.
+        names: List of species names (function_names order).
+        time_column_name: Name for the time column. Default "time".
+
+    Returns:
+        pd.DataFrame: Time in first column, species concentrations in rest.
+    """
+    data = {time_column_name: sol.t}
+    for i, name in enumerate(names):
+        data[name] = sol.y[i]
+    return pd.DataFrame(data)
+
+
+@dataclass
+class SolverConfig:
+    """Configuration parameters for the ODE solver.
+
+    Attributes:
+        y0 (list): Initial concentrations for all species (required).
+        t_span (tuple): Time span for integration as (t_start, t_end)
+            (required).
+        t_eval (Optional[np.ndarray]): Time points at which to evaluate
+            the solution. If None, the solver chooses the time points.
+        method (str): Integration method to use. Defaults to "RK45".
+        rtol (float): Relative tolerance for the solver. Defaults to 1e-6.
+        rate_const_values (Optional[Union[dict, Callable[[float], dict]]]):
+            When provided with symbolic_rate_const_keys, the solver uses the
+            rate-constants ODE path: either a dict of rate constant values, or
+            a callable (t) -> dict for time-dependent rates. Must be used
+            together with symbolic_rate_const_keys (both or neither).
+        symbolic_rate_const_keys (Optional[List[str]]): Order of rate constant
+            names passed to the ODE. Required when rate_const_values is set.
+            Both must be set or both omitted; otherwise an error is raised.
+    """
+    y0: list
+    t_span: tuple
+    t_eval: Optional[np.ndarray] = field(default=None)
+    method: str = "RK45"
+    rtol: float = 1e-6
+    rate_const_values: Optional[Union[Dict[str, float], Callable[[float], Dict[str, float]]]] = field(default=None)
+    symbolic_rate_const_keys: Optional[List[str]] = field(default=None)
+
+
+class RxnODEsolver:
+    """Solver for ODE systems representing chemical reaction kinetics.
+    
+    This class integrates ODE systems using scipy.solve_ivp and provides
+    methods to visualize the time evolution of chemical species and to
+    compare the solution with experimental data (eval_fit_metrics).
+
+    Attributes:
+        builder (RxnODEbuild): The ODE builder instance containing the
+            reaction system definition.
+        config (SolverConfig): Configuration parameters for the solver.
+        ode_construct (tuple, optional): ODE system construction data.
+            Set after calling solve_system().
+        solution (scipy.integrate.OdeResult, optional): Solution from
+            numerical integration. Set after calling solve_system().
+    """
+    
+    def __init__(self, builder: RxnODEbuild, config: SolverConfig):
+        """Initialize the ODE solver.
+        
+        Args:
+            builder (RxnODEbuild): The ODE builder instance containing
+                the reaction system definition.
+            config (SolverConfig): Configuration parameters for the solver.
+        
+        Raises:
+            SystemExit: If rate constants validation fails.
+        """
+        # rate_const_values と symbolic_rate_const_keys は両方指定か両方省略
+        rcv = getattr(config, 'rate_const_values', None)
+        srck = getattr(config, 'symbolic_rate_const_keys', None)
+        if (rcv is None) != (srck is None):
+            raise ValueError(
+                "rate_const_values and symbolic_rate_const_keys must be "
+                "both set or both omitted; one alone is invalid."
+            )
+
+        # 反応速度定数の型をチェック
+        if not self._validate_rate_constants(builder.rate_consts_dict):
+            print("reconfirm rate constants")
+            sys.exit(1)
+        
+        # ODEビルダーのインスタンスを受け取り、参照として保持
+        self.builder = builder
+        self.config = config
+        self.ode_construct = None
+        self.solution = None
+
+    def _validate_rate_constants(self, rate_consts_dict):
+        """Validate that all rate constants are numeric or symbolic.
+        
+        Checks that all values in the rate constants dictionary are either
+        numeric types (int, float) or SymPy symbolic expressions. This
+        ensures the rate constants are suitable for numerical integration.
+        
+        Args:
+            rate_consts_dict (dict): Dictionary of rate constants.
+            
+        Returns:
+            bool: True if all values are numeric or symbolic, False otherwise.
+        """
+        if not isinstance(rate_consts_dict, dict):
+            return False
+
+        for key, value in rate_consts_dict.items():
+            # Accept Python numeric types, NumPy numeric types,
+            # and SymPy symbolic values
+            if isinstance(value, SympyBasic):
+                continue
+            if isinstance(value, (int, float)):
+                continue
+            return False
+
+        return True
+
+    def solve_system(self):
+        """Solve the ODE system numerically.
+
+        Performs numerical integration of the ODE system using scipy.solve_ivp.
+        The solution is stored internally and also returned.
+        When config has rate_const_values and symbolic_rate_const_keys set,
+        uses the rate-constants ODE path; otherwise uses the standard path.
+
+        Returns:
+            tuple: A tuple containing:
+                - ode_construct (tuple): ODE system construction data including
+                    system_of_equations, sympy_symbol_dict, ode_system,
+                    function_names, and rate_consts_dict.
+                - solution (scipy.integrate.OdeResult): Solution object from
+                    scipy.solve_ivp containing time points and concentrations.
+                    May be None if integration fails.
+        """
+        rcv = getattr(self.config, 'rate_const_values', None)
+        srck = getattr(self.config, 'symbolic_rate_const_keys', None)
+
+        if rcv is not None and srck is not None:
+            ode_system, symbolic_rate_const_keys = (
+                self.builder.create_ode_system_with_rate_consts()
+            )
+            system_rhs = create_system_rhs(
+                ode_system,
+                self.builder.function_names,
+                rate_const_values=rcv,
+                symbolic_rate_const_keys=srck,
+            )
+        else:
+            ode_construct = self.builder.get_ode_system()
+            (system_of_equations, sympy_symbol_dict,
+             ode_system, function_names, rate_consts_dict) = ode_construct
+            system_rhs = create_system_rhs(ode_system, function_names)
+
+        solution = None
+        try:
+            solution = solve_ivp(
+                system_rhs,
+                self.config.t_span,
+                self.config.y0,
+                t_eval=self.config.t_eval,
+                method=self.config.method,
+                rtol=self.config.rtol
+            )
+        except Exception as e:
+            print(f"An error occurred during numerical integration.: {e}")
+            print("Plz. review the debug info.")
+
+        if rcv is not None and srck is not None:
+            ode_construct = (
+                self.builder.get_equations(),
+                self.builder.sympy_symbol_dict,
+                ode_system,
+                self.builder.function_names,
+                self.builder.rate_consts_dict,
+            )
+        else:
+            ode_construct = self.builder.get_ode_system()
+        self.ode_construct = ode_construct
+        self.solution = solution
+        return ode_construct, solution
+
+    def to_dataframe_list(self, solution=None, time_column_name="time"):
+        """Return the solution(s) as a list of DataFrames.
+
+        Works for both single and multiple datasets. Always returns a list;
+        single solution yields a 1-element list.
+
+        Args:
+            solution (scipy.integrate.OdeResult, optional): Solution to
+                convert. If None, uses the solution from solve_system().
+                Defaults to None.
+            time_column_name (str, optional): Name of the time column
+                (first column). Defaults to "time".
+
+        Returns:
+            list[pd.DataFrame]: One DataFrame per solution. Each has one row
+                per time point; first column is time, following columns are
+                species concentrations (names from function_names).
+
+        Raises:
+            RuntimeError: If no solution is available (solve_system not run).
+        """
+        sol = solution if solution is not None else self.solution
+        if sol is None:
+            raise RuntimeError(
+                "No solution available. Call solve_system() first."
+            )
+        names = self.builder.function_names
+        return [_ode_result_to_dataframe(sol, names, time_column_name)]
+
+    def _compute_rss(self, expdata_df, solution=None, recompute=True):
+        """Compute RSS at experimental time points (internal)."""
+        if recompute:
+            if self.ode_construct is None:
+                raise RuntimeError(
+                    "recompute=True requires solve_system() to be called first."
+                )
+            rcv = getattr(self.config, 'rate_const_values', None)
+            srck = getattr(self.config, 'symbolic_rate_const_keys', None)
+            if rcv is not None and srck is not None:
+                ode_system, _ = self.builder.create_ode_system_with_rate_consts()
+                system_rhs = create_system_rhs(
+                    ode_system,
+                    self.builder.function_names,
+                    rate_const_values=rcv,
+                    symbolic_rate_const_keys=srck,
+                )
+            else:
+                (
+                    _,
+                    _,
+                    ode_system,
+                    function_names,
+                    _,
+                ) = self.ode_construct
+                system_rhs = create_system_rhs(ode_system, function_names)
+            t_col = expdata_df.iloc[:, 0].dropna()
+            if len(t_col) == 0:
+                raise RuntimeError(
+                    "No valid time points in the experimental data."
+                )
+            t_eval = np.sort(np.unique(t_col.to_numpy()))
+            try:
+                sol_new = solve_ivp(
+                    system_rhs,
+                    self.config.t_span,
+                    self.config.y0,
+                    t_eval=t_eval,
+                    method=self.config.method,
+                    rtol=self.config.rtol,
+                )
+                if not sol_new.success:
+                    raise RuntimeError(
+                        sol_new.message or "Integration failed."
+                    )
+            except Exception as e:
+                warnings.warn(
+                    f"Re-integration at experimental times failed ({e}). "
+                    "Computing residual by interpolation.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                return self._compute_rss_interp(expdata_df, solution)
+            time_to_idx = {float(t): idx for idx, t in enumerate(sol_new.t)}
+            names = self.builder.function_names
+            name_to_idx = {name: i for i, name in enumerate(names)}
+            rss = 0.0
+            for col in expdata_df.columns[1:]:
+                if col not in name_to_idx:
+                    continue
+                i = name_to_idx[col]
+                c_exp = expdata_df[col].to_numpy()
+                for j in range(len(expdata_df)):
+                    t_j = expdata_df.iloc[j, 0]
+                    if pd.isna(t_j) or np.isnan(c_exp[j]):
+                        continue
+                    t_j = float(t_j)
+                    idx = time_to_idx[t_j]
+                    rss += (c_exp[j] - sol_new.y[i][idx]) ** 2
+            return float(rss)
+
+        return self._compute_rss_interp(expdata_df, solution)
+
+    def _compute_rss_interp(self, expdata_df, solution=None):
+        """Compute RSS by interpolating the solution (internal)."""
+        sol = solution if solution is not None else self.solution
+        if sol is None:
+            raise RuntimeError(
+                "No solution available. Call solve_system() first."
+            )
+        t_exp = expdata_df.iloc[:, 0].to_numpy()
+        names = self.builder.function_names
+        name_to_idx = {name: i for i, name in enumerate(names)}
+        rss = 0.0
+        for col in expdata_df.columns[1:]:
+            if col not in name_to_idx:
+                continue
+            i = name_to_idx[col]
+            c_exp = expdata_df[col].to_numpy()
+            mask = ~np.isnan(c_exp)
+            if not np.any(mask):
+                continue
+            t_m = t_exp[mask]
+            c_m = c_exp[mask]
+            c_model = np.interp(t_m, sol.t, sol.y[i])
+            rss += np.sum((c_m - c_model) ** 2)
+        return float(rss)
+
+    def eval_fit_metrics(self, expdata_df, solution=None, verbose=True, recompute=True):
+        """Compute RSS, TSS, and R² for solution vs. experimental data.
+
+        Uses the same valid points for RSS and TSS (NaNs excluded).
+        TSS uses per-species means. R² = 1 - RSS/TSS.
+        Returns the same dict shape as fit_metrics.fit_metrics(datasets, rss).
+
+        Args:
+            expdata_df (pandas.DataFrame): Time-course data. First column
+                is time; remaining columns are species concentrations.
+                Column names must match function_names.
+            solution (scipy.integrate.OdeResult, optional): Solution to use
+                when recompute=False. If None, uses the result of
+                solve_system(). Defaults to None.
+            verbose (bool, optional): If True, print RSS and R².
+                Defaults to True.
+            recompute (bool, optional): If True, re-integrate at
+                experimental times for RSS. If False, use interpolation.
+                Defaults to True.
+
+        Returns:
+            dict: Keys 'rss', 'tss', 'r2' (all float).
+
+        Raises:
+            RuntimeError: If no solution is available, or if recompute=True
+                but solve_system() has not been called.
+        """
+        rss = self._compute_rss(expdata_df, solution, recompute)
+        datasets = expdata_df_to_datasets(expdata_df, self.builder.function_names)
+        metrics = compute_fit_metrics(datasets, rss)
+        if metrics["tss"] < TSS_MIN_THRESHOLD:
+            warnings.warn(
+                "TSS is nearly zero; R² may be unreliable.",
+                UserWarning,
+                stacklevel=2,
+            )
+        if verbose:
+            print(
+                f"Residual sum of squares: {metrics['rss']:.6g}  "
+                f"R²: {metrics['r2']:.6g}"
+            )
+        return metrics
+
+    def solution_plot(
+        self,
+        solution=None,
+        expdata_df: Optional[Union[pd.DataFrame, List[pd.DataFrame]]] = None,
+        species: Optional[List[str]] = None,
+        subplot_layout: Optional[Tuple[int, int]] = None,
+    ):
+        """Plot the time evolution of chemical species.
+
+        Creates a time-course plot showing the simulated concentration of
+        each species over time. Optionally overlays experimental data
+        points with colors matching the simulation lines.
+        Also prints the final concentrations at the last time point.
+
+        Args:
+            solution (scipy.integrate.OdeResult, optional): Solution
+                object from solve_ivp to plot. If None, uses the solution
+                stored internally from solve_system(). Defaults to None.
+            expdata_df (pandas.DataFrame or list of DataFrame, optional):
+                Experimental data for overlay. Can be a single DataFrame or
+                a list of DataFrames (e.g. from multiple CSVs). Format:
+                - First column: time values (column name used for x-axis
+                  label unit, e.g. "t_s" -> "Time (s)").
+                - Subsequent columns: concentrations for each species.
+                - Column names must match species names (e.g. from
+                  self.builder.function_names).
+                If a list with more than one DataFrame is given, one
+                subplot is drawn per DataFrame (same solution curve,
+                scatter from that DataFrame). If a single DataFrame or
+                a list of length one is given, one figure with one axes
+                is drawn. When a list is passed, the 0th column name must
+                be identical across all DataFrames; otherwise a warning
+                is emitted. Defaults to None.
+            species (list[str], optional): List of species names to plot.
+                If None, all species in the ODE system are plotted.
+                If provided, only these species are drawn. Any name not
+                in the ODE system triggers a warning and ValueError.
+                Defaults to None.
+            subplot_layout (tuple[int, int], optional): (n_rows, n_cols)
+                for the subplot grid when expdata_df is a list of multiple
+                DataFrames. If None, defaults to (len(expdata_df), 1)
+                (one column). Ignored when expdata_df is None or a single
+                DataFrame. Defaults to None.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If a name in species is not in the ODE system.
+        """
+        sol = solution if solution is not None else self.solution
+        if sol is None:
+            print("No solution to plot. Run solve_system() first "
+                  "or pass a solution.")
+            return
+
+        if expdata_df is not None:
+            df_list = expdata_df if isinstance(expdata_df, list) else [expdata_df]
+        else:
+            df_list = []
+
+        solution_list = [sol] * max(1, len(df_list))
+        _plot_time_course_solutions(
+            solution_list,
+            df_list,
+            self.builder.function_names,
+            species=species,
+            subplot_layout=subplot_layout,
+        )
+
+
+def _plot_time_course_solutions(
+    solution_list,
+    df_list,
+    function_names,
+    species=None,
+    subplot_layout=None,
+):
+    """Plot time-course solutions. Shared by solution_plot and plot_fitted_solution.
+
+    Args:
+        solution_list: List of OdeResult or None. Length must match df_list when
+            df_list is non-empty. When df_list is empty, uses solution_list as-is.
+        df_list: List of DataFrames for experimental overlay. Can be empty
+            (integrate curves only). When non-empty, len must equal len(solution_list).
+        function_names: List of species names in ODE order.
+        species: Optional list of species to plot. If None, all species.
+        subplot_layout: Optional (n_rows, n_cols). Default (n_plots, 1).
+    """
+    all_species = list(function_names)
+    if species is None:
+        plot_species = all_species
+    else:
+        invalid = [s for s in species if s not in all_species]
+        if invalid:
+            raise ValueError(
+                f"Species not in the ODE system: {invalid}. "
+                f"Available: {all_species}"
+            )
+        plot_species = list(species)
+
+    name_to_idx = {name: i for i, name in enumerate(all_species)}
+    plot_items = [(name, name_to_idx[name]) for name in plot_species]
+
+    # Pad df_list when empty
+    if not df_list:
+        effective_df_list = [None] * len(solution_list)
+        time_unit = None
+    else:
+        if len(df_list) != len(solution_list):
+            raise ValueError(
+                f"Length mismatch: len(df_list)={len(df_list)}, "
+                f"len(solution_list)={len(solution_list)}"
+            )
+        effective_df_list = df_list
+        time_unit = get_time_unit_from_expdata(df_list)
+
+    valid_pairs = [
+        (idx, sol, plot_df)
+        for idx, (sol, plot_df) in enumerate(zip(solution_list, effective_df_list))
+        if sol is not None
+    ]
+    failed_pairs = [
+        (idx, plot_df)
+        for idx, (sol, plot_df) in enumerate(zip(solution_list, effective_df_list))
+        if sol is None
+    ]
+
+    for idx, plot_df in failed_pairs:
+        warnings.warn(
+            f"Integration failed for dataset {idx + 1}.",
+            UserWarning,
+            stacklevel=3,
+        )
+        if plot_df is not None:
+            print(f"  Failed DataFrame (dataset {idx + 1}):")
+            print(plot_df.head())
+
+    if not valid_pairs:
+        print("No successful integrations to plot.")
+        return
+
+    n_plots = len(valid_pairs)
+    n_rows, n_cols = (
+        subplot_layout if subplot_layout is not None else (n_plots, 1)
+    )
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows)
+    )
+    if n_rows == 1 and n_cols == 1:
+        axes = np.array([[axes]])
+    elif n_rows == 1 or n_cols == 1:
+        axes = axes.reshape(n_rows, n_cols)
+
+    t_min_all = min(float(sol.t.min()) for _, sol, _ in valid_pairs)
+    t_max_all = max(float(sol.t.max()) for _, sol, _ in valid_pairs)
+
+    print("\n=== Time-course plot ===")
+
+    for plot_idx, (orig_idx, sol, plot_df) in enumerate(valid_pairs):
+        ax = axes.flat[plot_idx]
+        for species_name, i in plot_items:
+            line, = ax.plot(
+                sol.t, sol.y[i], label=species_name, linewidth=2
+            )
+            color = line.get_color()
+            if plot_df is not None and species_name in plot_df.columns:
+                t_exp = plot_df.iloc[:, 0].to_numpy()
+                c_exp = plot_df[species_name].to_numpy()
+                mask = ~np.isnan(c_exp)
+                ax.scatter(
+                    t_exp[mask], c_exp[mask],
+                    color=color, marker='o', s=50, zorder=5,
+                    edgecolors='white'
+                )
+        ax.set_xlim(t_min_all, t_max_all)
+        xlabel = (
+            f"Time ({time_unit})" if time_unit is not None
+            else "Time ()"
+        )
+        ax.set_xlabel(xlabel, fontsize=12)
+        ax.set_ylabel('Concentration', fontsize=12)
+        ax.set_title(f'Dataset {orig_idx + 1}', fontsize=14)
+        ax.legend(loc='best', fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+    for idx in range(n_plots, axes.size):
+        axes.flat[idx].set_visible(False)
+    plt.tight_layout()
+    plt.show()
+
+    print("\n=== Concentration at the final time point ===")
+    for orig_idx, sol, _ in valid_pairs:
+        print(f"Dataset {orig_idx + 1}:")
+        for name, i in plot_items:
+            print(f"  {name}: {sol.y[i][-1]:.6f}")
