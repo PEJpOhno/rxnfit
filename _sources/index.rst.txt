@@ -17,6 +17,7 @@ Overviews
 - A rate constant may be given as an **expression** in other rate constants (e.g. k₂ = 2·k₁), or as a **function of time** *t* via an override CSV.
 
 **Project Link** https://github.com/PEJpOhno/rxnfit 
+**Documentation** https://pejpohno.github.io/rxnfit/ 
 
 This module and its accompanying documentation were developed with the support of Cursor’s AI-assisted tools.  
 
