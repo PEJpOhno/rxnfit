@@ -1,0 +1,469 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rxnfit.rxn_reader module &mdash; rxnfit 20260310 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=dac109aa"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="rxnfit.build_ode module" href="rxnfit.build_ode.html" />
+    <link rel="prev" title="rxnfit documentation" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            rxnfit
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">rxnfit.rxn_reader module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE"><code class="docutils literal notranslate"><span class="pre">RxnToODE</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.file_path"><code class="docutils literal notranslate"><span class="pre">RxnToODE.file_path</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.reactant_eq"><code class="docutils literal notranslate"><span class="pre">RxnToODE.reactant_eq</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.t"><code class="docutils literal notranslate"><span class="pre">RxnToODE.t</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.function_names"><code class="docutils literal notranslate"><span class="pre">RxnToODE.function_names</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.functions_dict"><code class="docutils literal notranslate"><span class="pre">RxnToODE.functions_dict</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.rate_consts_dict"><code class="docutils literal notranslate"><span class="pre">RxnToODE.rate_consts_dict</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.sympy_symbol_dict"><code class="docutils literal notranslate"><span class="pre">RxnToODE.sympy_symbol_dict</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.sys_odes_dict"><code class="docutils literal notranslate"><span class="pre">RxnToODE.sys_odes_dict</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.create_ode_system"><code class="docutils literal notranslate"><span class="pre">RxnToODE.create_ode_system()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.rxn_reader.RxnToODE.get_equations"><code class="docutils literal notranslate"><span class="pre">RxnToODE.get_equations()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.rxn_reader.generate_ode"><code class="docutils literal notranslate"><span class="pre">generate_ode()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.rxn_reader.generate_sys_ode"><code class="docutils literal notranslate"><span class="pre">generate_sys_ode()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.rxn_reader.get_reactions"><code class="docutils literal notranslate"><span class="pre">get_reactions()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.rxn_reader.get_unique_species"><code class="docutils literal notranslate"><span class="pre">get_unique_species()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.rxn_reader.rate_constants"><code class="docutils literal notranslate"><span class="pre">rate_constants()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.rxn_reader.reactant_consumption"><code class="docutils literal notranslate"><span class="pre">reactant_consumption()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.rxn_reader.to_chempy_style"><code class="docutils literal notranslate"><span class="pre">to_chempy_style()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.build_ode.html">rxnfit.build_ode module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.rate_const_ft_eval.html">rxnfit.rate_const_ft_eval module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.solv_ode.html">rxnfit.solv_ode module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.expdata_reader.html">rxnfit.expdata_reader module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.expdata_fit_sci.html">rxnfit.expdata_fit_sci module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.p0_opt_fit.html">rxnfit.p0_opt_fit module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.fit_metrics.html">rxnfit.fit_metrics module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">rxnfit</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">rxnfit.rxn_reader module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/rxnfit.rxn_reader.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-rxnfit.rxn_reader">
+<span id="rxnfit-rxn-reader-module"></span><h1>rxnfit.rxn_reader module<a class="headerlink" href="#module-rxnfit.rxn_reader" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">rxnfit.rxn_reader.</span></span><span class="sig-name descname"><span class="pre">RxnToODE</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">encoding</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Convert reaction equations from CSV files to ODE systems.</p>
+<p>Reads chemical reaction data from CSV and builds systems of ordinary
+differential equations using SymPy. Rate constants may be numeric,
+symbolic, or given by expressions (e.g. k2 = k1*2).</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.file_path">
+<span class="sig-name descname"><span class="pre">file_path</span></span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.file_path" title="Link to this definition"></a></dt>
+<dd><p>Path to the CSV file containing reaction data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.reactant_eq">
+<span class="sig-name descname"><span class="pre">reactant_eq</span></span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.reactant_eq" title="Link to this definition"></a></dt>
+<dd><p>List of reactant equations from the file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.t">
+<span class="sig-name descname"><span class="pre">t</span></span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.t" title="Link to this definition"></a></dt>
+<dd><p>SymPy symbol for time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Symbol</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.function_names">
+<span class="sig-name descname"><span class="pre">function_names</span></span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.function_names" title="Link to this definition"></a></dt>
+<dd><p>Chemical species names in appearance order.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.functions_dict">
+<span class="sig-name descname"><span class="pre">functions_dict</span></span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.functions_dict" title="Link to this definition"></a></dt>
+<dd><p>Species names to SymPy Function objects.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.rate_consts_dict">
+<span class="sig-name descname"><span class="pre">rate_consts_dict</span></span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.rate_consts_dict" title="Link to this definition"></a></dt>
+<dd><p>Rate constant key to float, Symbol, or
+SymPy Expr (e.g. 2*k1 for constraint k2=k1*2).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.sympy_symbol_dict">
+<span class="sig-name descname"><span class="pre">sympy_symbol_dict</span></span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.sympy_symbol_dict" title="Link to this definition"></a></dt>
+<dd><p>Combined dict of t, Derivative,
+rate_consts_dict, and functions_dict for parsing ODEs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.sys_odes_dict">
+<span class="sig-name descname"><span class="pre">sys_odes_dict</span></span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.sys_odes_dict" title="Link to this definition"></a></dt>
+<dd><p>Species name to ODE right-hand side string.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.create_ode_system">
+<span class="sig-name descname"><span class="pre">create_ode_system</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.create_ode_system" title="Link to this definition"></a></dt>
+<dd><p>Build ODE right-hand side expressions (SymPy) per species.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Species name -&gt; SymPy expression for d(species)/dt.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.RxnToODE.get_equations">
+<span class="sig-name descname"><span class="pre">get_equations</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.RxnToODE.get_equations" title="Link to this definition"></a></dt>
+<dd><p>Build the system of SymPy equations for the ODEs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of sympy.Eq (lhs = Derivative(species(t), t), rhs expr).</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.generate_ode">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.rxn_reader.</span></span><span class="sig-name descname"><span class="pre">generate_ode</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reaction</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.generate_ode" title="Link to this definition"></a></dt>
+<dd><p>Generate ODE expressions for a single reaction.</p>
+<p>This function is used internally by ‘generate_sys_ode’ to process
+individual reactions and generate differential equation expressions
+for each chemical species involved in the reaction.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>reaction</strong> (<em>list</em>) – A list representing a reaction equation in the
+format [[‘ID’, rate_constant], reactants, products, conditions,
+[rate_law_string, [reactant_coeffs], [product_coeffs]]].
+rate_constant may be float or str. The reaction must have
+at least 5 elements.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A dictionary mapping species names (str) to their ODE</dt><dd><p>expression strings. Reactants contribute negative terms, products
+contribute positive terms.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>defaultdict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.generate_sys_ode">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.rxn_reader.</span></span><span class="sig-name descname"><span class="pre">generate_sys_ode</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reactant_eq</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.generate_sys_ode" title="Link to this definition"></a></dt>
+<dd><p>Generate system of ODEs from reactant equations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>reactant_eq</strong> (<em>list</em>) – A list of reactant equations.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A dictionary containing the system of ODEs.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.get_reactions">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.rxn_reader.</span></span><span class="sig-name descname"><span class="pre">get_reactions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">encoding</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.get_reactions" title="Link to this definition"></a></dt>
+<dd><p>Imports elementary reaction formulas from a CSV file into a Python list.</p>
+<p>The reaction formulas are written by reaction SMILES style.
+The CSV file is expected to have a header row and each subsequent row
+should represent a reaction with columns for Reaction ID, rate constant
+(k), followed by pairs of columns for reactant coefficient and reactant
+name, separated by “&gt;”, then conditions, separated by “&gt;”, and finally
+pairs of columns for product coefficient and product name. The “+”
+symbols in the CSV are ignored.</p>
+<dl class="simple">
+<dt>Rate constant column (k):</dt><dd><ul class="simple">
+<li><p>Empty: replaced by ‘k’ + RID (e.g. ‘k2’ for RID 2).</p></li>
+<li><p>Numeric string (e.g. “0.04”): converted to float.</p></li>
+<li><p>Other string: kept as-is (expression like “k1*2” or symbol name).</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>file_path</strong> (<em>str</em>) – The path to the CSV file containing the reaction
+formulas.</p></li>
+<li><p><strong>encoding</strong> (<em>str</em><em>, </em><em>optional</em>) – The encoding of the CSV file. Defaults to
+‘utf-8’ if None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl>
+<dt>A list of lists, where each inner list represents a reaction</dt><dd><p>and contains:
+- A list [reaction_id, rate_constant] where rate_constant is</p>
+<blockquote>
+<div><p>float, or str (e.g. ‘k2’ for empty, or expression like ‘k1*2’).</p>
+</div></blockquote>
+<ul class="simple">
+<li><p>A list of [coefficient, name] for each reactant.</p></li>
+<li><p>A list of [coefficient, name] for each product.</p></li>
+<li><p>A list of condition strings.</p></li>
+</ul>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.get_unique_species">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.rxn_reader.</span></span><span class="sig-name descname"><span class="pre">get_unique_species</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reaction_equations</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.get_unique_species" title="Link to this definition"></a></dt>
+<dd><p>Extract unique chemical species from elementary reactions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>reaction_equations</strong> (<em>list</em>) – A list of lists representing elementary
+reactions.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A list of unique chemical species sorted by their appearance</dt><dd><p>order.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.rate_constants">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.rxn_reader.</span></span><span class="sig-name descname"><span class="pre">rate_constants</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reactant_eq</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.rate_constants" title="Link to this definition"></a></dt>
+<dd><p>Extract rate constants from reactant equations.</p>
+<p>Each key is ‘k’ + reaction ID. Values are float when the rate constant
+cell was numeric; otherwise the raw string (e.g. ‘k2’, ‘k1*2’) is kept.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>reactant_eq</strong> (<em>list</em>) – A list of reactant equations (output of
+reactant_consumption for each reaction from get_reactions).</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>Mapping from rate constant key (e.g. ‘k1’, ‘k2’) to float or</dt><dd><p>str. String values are used later for symbol or expression
+parsing in _build_rate_consts_sympy.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.reactant_consumption">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.rxn_reader.</span></span><span class="sig-name descname"><span class="pre">reactant_consumption</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reaction_equation</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.reactant_consumption" title="Link to this definition"></a></dt>
+<dd><p>Generate rate law equations for reactant consumption.</p>
+<p>The rate law equations and coefficients are determined as follows.
+For a reaction aA + bB -&gt; cC + dD:
+-d[A]/dt = k * A^a * B^b
+-(1/a)d[A]/dt = -(1/b)d[B]/dt = (1/c)d[C]/dt = (1/d)d[D]/dt
+That is,
+-d[A]/dt = -(a/b)d[B]/dt = (a/c)d[C]/dt = (a/d)d[D]/dt</p>
+<p>For products-only reactions (e.g. -&gt; C), the rate is zero-order:
+v = k, d[C]/dt = k.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>reaction_equation</strong> (<em>list</em>) – A list representing a reaction equation
+in the format [[‘ID’, rate_constant], [[coeff, reactant1], …],
+[[coeff, product1], …]]. rate_constant may be float or str.
+Reactants may be empty for zero-order formation.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>The input reaction_equation list extended with:</dt><dd><ul class="simple">
+<li><p>A string representing the RHS of the rate law equation</p></li>
+<li><p>A list of coefficients for reactants</p></li>
+<li><p>A list of coefficients for products</p></li>
+</ul>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.rxn_reader.to_chempy_style">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.rxn_reader.</span></span><span class="sig-name descname"><span class="pre">to_chempy_style</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">reaction</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.rxn_reader.to_chempy_style" title="Link to this definition"></a></dt>
+<dd><p>Convert a reaction equation list to a ChemPy-style dictionary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>reaction</strong> (<em>list</em>) – A list representing a reaction equation in the
+format [[‘ID’, rate_constant], [[coeff, reactant1], …],
+[[coeff, product1], …]].</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A list containing the reaction ID and rate constant, followed</dt><dd><p>by two dictionaries representing the reactants and products with
+their coefficients.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="rxnfit documentation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="rxnfit.build_ode.html" class="btn btn-neutral float-right" title="rxnfit.build_ode module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Mitsuru Ohno.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

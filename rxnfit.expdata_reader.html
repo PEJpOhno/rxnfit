@@ -1,0 +1,300 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rxnfit.expdata_reader module &mdash; rxnfit 20260310 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=dac109aa"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="rxnfit.expdata_fit_sci module" href="rxnfit.expdata_fit_sci.html" />
+    <link rel="prev" title="rxnfit.solv_ode module" href="rxnfit.solv_ode.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            rxnfit
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.rxn_reader.html">rxnfit.rxn_reader module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.build_ode.html">rxnfit.build_ode module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.rate_const_ft_eval.html">rxnfit.rate_const_ft_eval module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.solv_ode.html">rxnfit.solv_ode module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">rxnfit.expdata_reader module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.expdata_reader.align_expdata_to_function_names"><code class="docutils literal notranslate"><span class="pre">align_expdata_to_function_names()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.expdata_reader.expdata_read"><code class="docutils literal notranslate"><span class="pre">expdata_read()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.expdata_reader.get_t0_from_expdata"><code class="docutils literal notranslate"><span class="pre">get_t0_from_expdata()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.expdata_reader.get_time_unit_from_expdata"><code class="docutils literal notranslate"><span class="pre">get_time_unit_from_expdata()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.expdata_reader.get_y0_from_expdata"><code class="docutils literal notranslate"><span class="pre">get_y0_from_expdata()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.expdata_reader.time_course"><code class="docutils literal notranslate"><span class="pre">time_course()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.expdata_fit_sci.html">rxnfit.expdata_fit_sci module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.p0_opt_fit.html">rxnfit.p0_opt_fit module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.fit_metrics.html">rxnfit.fit_metrics module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">rxnfit</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">rxnfit.expdata_reader module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/rxnfit.expdata_reader.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-rxnfit.expdata_reader">
+<span id="rxnfit-expdata-reader-module"></span><h1>rxnfit.expdata_reader module<a class="headerlink" href="#module-rxnfit.expdata_reader" title="Link to this heading"></a></h1>
+<p>Load experimental time-course data from DataFrames.</p>
+<p>Experimental data is passed as a list of DataFrames and returned as a list
+of (t_list, C_exp_list) tuples. Functions handle missing values and align
+data to ODE function names order. Time column (0th column) unit and
+consistency across DataFrames are also provided.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.expdata_reader.align_expdata_to_function_names">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.expdata_reader.</span></span><span class="sig-name descname"><span class="pre">align_expdata_to_function_names</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">t_list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">C_exp_list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">columns</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">function_names</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.expdata_reader.align_expdata_to_function_names" title="Link to this definition"></a></dt>
+<dd><p>Align time_course output to function_names order.</p>
+<p>time_course returns data in df.columns[1:] order. This function
+reorders to match ODE function_names.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>t_list</strong> (<em>list</em>) – List of time arrays from time_course
+(DataFrame column order).</p></li>
+<li><p><strong>C_exp_list</strong> (<em>list</em>) – List of concentration arrays from time_course.</p></li>
+<li><p><strong>columns</strong> (<em>list</em><em>[</em><em>str</em><em>]</em>) – DataFrame column names (species only, no time).</p></li>
+<li><p><strong>function_names</strong> (<em>list</em><em>[</em><em>str</em><em>]</em>) – Chemical species names in ODE order.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>(t_aligned, C_aligned) in function_names order.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If a species in function_names is not in columns.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.expdata_reader.expdata_read">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.expdata_reader.</span></span><span class="sig-name descname"><span class="pre">expdata_read</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df_list</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.expdata_reader.expdata_read" title="Link to this definition"></a></dt>
+<dd><p>Read experimental data from a list of DataFrames.</p>
+<p>Each DataFrame must have the same columns (time + species).
+Always returns a list, even for a single DataFrame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df_list</strong> (<em>list</em><em>[</em><em>pandas.DataFrame</em><em>]</em>) – List of DataFrames containing
+experimental data. All DataFrames must have same column names.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>List of (t_list, C_exp_list) tuples, one per DataFrame.</dt><dd><p>Each t_list is a list of time arrays (one per species column).
+Each C_exp_list is a list of concentration arrays (one per
+species column). Missing values are removed per species.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list[tuple]</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If df_list is empty or if DataFrames have different
+    column names.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.expdata_reader.get_t0_from_expdata">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.expdata_reader.</span></span><span class="sig-name descname"><span class="pre">get_t0_from_expdata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df_list</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.expdata_reader.get_t0_from_expdata" title="Link to this definition"></a></dt>
+<dd><p>Extract initial time from first row of each DataFrame.</p>
+<p>The first column is assumed to be time. Returns one float per DataFrame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df_list</strong> (<em>list</em><em>[</em><em>pandas.DataFrame</em><em>]</em>) – List of DataFrames with time in
+the first column.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>Initial time (first row, first column) for each</dt><dd><p>DataFrame. len(return) == len(df_list).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list[float]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.expdata_reader.get_time_unit_from_expdata">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.expdata_reader.</span></span><span class="sig-name descname"><span class="pre">get_time_unit_from_expdata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df_list</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.expdata_reader.get_time_unit_from_expdata" title="Link to this definition"></a></dt>
+<dd><p>Get time axis unit from the 0th column name and check consistency.</p>
+<p>The unit is derived from the first column name: if it contains ‘_’,
+the part after the last ‘_’ is used (e.g. “t_s” -&gt; “s”); otherwise
+the full column name is used. When multiple DataFrames are given,
+their 0th column names must match; otherwise a warning is emitted
+and the first DataFrame’s column is used.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df_list</strong> (<em>list</em><em>[</em><em>pandas.DataFrame</em><em>]</em>) – List of DataFrames with time
+in the first column. Can be a single DataFrame (wrapped in a list).</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>The time unit string (e.g. “s”, “min”, “hr”), or None</dt><dd><p>if df_list is empty.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str or None</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If df_list is empty.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.expdata_reader.get_y0_from_expdata">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.expdata_reader.</span></span><span class="sig-name descname"><span class="pre">get_y0_from_expdata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df_list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">function_names</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.expdata_reader.get_y0_from_expdata" title="Link to this definition"></a></dt>
+<dd><p>Extract initial concentrations from first row of each DataFrame.</p>
+<p>Returns concentrations in function_names order. For multiple DataFrames,
+returns a list of y0 vectors, one per DataFrame. The time of the first
+row can be obtained with get_t0_from_expdata; it is not required to be 0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df_list</strong> (<em>list</em><em>[</em><em>pandas.DataFrame</em><em>]</em>) – List of DataFrames with time column
+and chemical species columns.</p></li>
+<li><p><strong>function_names</strong> (<em>list</em><em>[</em><em>str</em><em>]</em>) – List of chemical species names in ODE
+variable order.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>List of initial concentration vectors, one per</dt><dd><p>DataFrame. Each y0 is in function_names order. Missing values
+are filled with 0. len(return) == len(df_list).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list[list[float]]</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If df_list is empty or a species name is not found
+    in the DataFrame columns.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="rxnfit.expdata_reader.time_course">
+<span class="sig-prename descclassname"><span class="pre">rxnfit.expdata_reader.</span></span><span class="sig-name descname"><span class="pre">time_course</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.expdata_reader.time_course" title="Link to this definition"></a></dt>
+<dd><p>Extract time and concentration arrays from a DataFrame.</p>
+<p>The first column must contain time values. Missing values are removed
+per series (chemical species).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>pandas.DataFrame</em>) – DataFrame with time in the first column and
+chemical species concentrations in subsequent columns.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p>t_list: List of time arrays, one per species. Each array
+contains only the time points where that species has valid data.</p></li>
+<li><p>C_exp_list: List of concentration arrays, one per species.
+Each array contains only the valid concentration values.</p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="rxnfit.solv_ode.html" class="btn btn-neutral float-left" title="rxnfit.solv_ode module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="rxnfit.expdata_fit_sci.html" class="btn btn-neutral float-right" title="rxnfit.expdata_fit_sci module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Mitsuru Ohno.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

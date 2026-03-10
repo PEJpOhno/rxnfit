@@ -1,0 +1,489 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rxnfit.solv_ode module &mdash; rxnfit 20260310 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=dac109aa"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="rxnfit.expdata_reader module" href="rxnfit.expdata_reader.html" />
+    <link rel="prev" title="rxnfit.rate_const_ft_eval module" href="rxnfit.rate_const_ft_eval.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            rxnfit
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.rxn_reader.html">rxnfit.rxn_reader module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.build_ode.html">rxnfit.build_ode module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.rate_const_ft_eval.html">rxnfit.rate_const_ft_eval module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">rxnfit.solv_ode module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.solv_ode.RxnODEsolver"><code class="docutils literal notranslate"><span class="pre">RxnODEsolver</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.RxnODEsolver.builder"><code class="docutils literal notranslate"><span class="pre">RxnODEsolver.builder</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.RxnODEsolver.config"><code class="docutils literal notranslate"><span class="pre">RxnODEsolver.config</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.RxnODEsolver.ode_construct"><code class="docutils literal notranslate"><span class="pre">RxnODEsolver.ode_construct</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.RxnODEsolver.solution"><code class="docutils literal notranslate"><span class="pre">RxnODEsolver.solution</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.RxnODEsolver.eval_fit_metrics"><code class="docutils literal notranslate"><span class="pre">RxnODEsolver.eval_fit_metrics()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.RxnODEsolver.solution_plot"><code class="docutils literal notranslate"><span class="pre">RxnODEsolver.solution_plot()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.RxnODEsolver.solve_system"><code class="docutils literal notranslate"><span class="pre">RxnODEsolver.solve_system()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.RxnODEsolver.to_dataframe_list"><code class="docutils literal notranslate"><span class="pre">RxnODEsolver.to_dataframe_list()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig"><code class="docutils literal notranslate"><span class="pre">SolverConfig</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig.y0"><code class="docutils literal notranslate"><span class="pre">SolverConfig.y0</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig.t_span"><code class="docutils literal notranslate"><span class="pre">SolverConfig.t_span</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig.t_eval"><code class="docutils literal notranslate"><span class="pre">SolverConfig.t_eval</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig.method"><code class="docutils literal notranslate"><span class="pre">SolverConfig.method</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig.rtol"><code class="docutils literal notranslate"><span class="pre">SolverConfig.rtol</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig.rate_const_values"><code class="docutils literal notranslate"><span class="pre">SolverConfig.rate_const_values</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig.symbolic_rate_const_keys"><code class="docutils literal notranslate"><span class="pre">SolverConfig.symbolic_rate_const_keys</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id0"><code class="docutils literal notranslate"><span class="pre">SolverConfig.method</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id1"><code class="docutils literal notranslate"><span class="pre">SolverConfig.rate_const_values</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id2"><code class="docutils literal notranslate"><span class="pre">SolverConfig.rtol</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id3"><code class="docutils literal notranslate"><span class="pre">SolverConfig.symbolic_rate_const_keys</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id4"><code class="docutils literal notranslate"><span class="pre">SolverConfig.t_eval</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id5"><code class="docutils literal notranslate"><span class="pre">SolverConfig.t_span</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id6"><code class="docutils literal notranslate"><span class="pre">SolverConfig.y0</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.expdata_reader.html">rxnfit.expdata_reader module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.expdata_fit_sci.html">rxnfit.expdata_fit_sci module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.p0_opt_fit.html">rxnfit.p0_opt_fit module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.fit_metrics.html">rxnfit.fit_metrics module</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">rxnfit</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">rxnfit.solv_ode module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/rxnfit.solv_ode.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-rxnfit.solv_ode">
+<span id="rxnfit-solv-ode-module"></span><h1>rxnfit.solv_ode module<a class="headerlink" href="#module-rxnfit.solv_ode" title="Link to this heading"></a></h1>
+<p>Calculate and visualize the time evolution of chemical species
+based on reaction rate equations with all rate constants known.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.RxnODEsolver">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">rxnfit.solv_ode.</span></span><span class="sig-name descname"><span class="pre">RxnODEsolver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">builder</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="rxnfit.build_ode.html#rxnfit.build_ode.RxnODEbuild" title="rxnfit.build_ode.RxnODEbuild"><span class="pre">RxnODEbuild</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig" title="rxnfit.solv_ode.SolverConfig"><span class="pre">SolverConfig</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.solv_ode.RxnODEsolver" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Solver for ODE systems representing chemical reaction kinetics.</p>
+<p>This class integrates ODE systems using scipy.solve_ivp and provides
+methods to visualize the time evolution of chemical species and to
+compare the solution with experimental data (eval_fit_metrics).</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.RxnODEsolver.builder">
+<span class="sig-name descname"><span class="pre">builder</span></span><a class="headerlink" href="#rxnfit.solv_ode.RxnODEsolver.builder" title="Link to this definition"></a></dt>
+<dd><p>The ODE builder instance containing the
+reaction system definition.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="rxnfit.build_ode.html#rxnfit.build_ode.RxnODEbuild" title="rxnfit.build_ode.RxnODEbuild">RxnODEbuild</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.RxnODEsolver.config">
+<span class="sig-name descname"><span class="pre">config</span></span><a class="headerlink" href="#rxnfit.solv_ode.RxnODEsolver.config" title="Link to this definition"></a></dt>
+<dd><p>Configuration parameters for the solver.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#rxnfit.solv_ode.SolverConfig" title="rxnfit.solv_ode.SolverConfig">SolverConfig</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.RxnODEsolver.ode_construct">
+<span class="sig-name descname"><span class="pre">ode_construct</span></span><a class="headerlink" href="#rxnfit.solv_ode.RxnODEsolver.ode_construct" title="Link to this definition"></a></dt>
+<dd><p>ODE system construction data.
+Set after calling solve_system().</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.RxnODEsolver.solution">
+<span class="sig-name descname"><span class="pre">solution</span></span><a class="headerlink" href="#rxnfit.solv_ode.RxnODEsolver.solution" title="Link to this definition"></a></dt>
+<dd><p>Solution from
+numerical integration. Set after calling solve_system().</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>scipy.integrate.OdeResult, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.RxnODEsolver.eval_fit_metrics">
+<span class="sig-name descname"><span class="pre">eval_fit_metrics</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">expdata_df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solution</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">recompute</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.solv_ode.RxnODEsolver.eval_fit_metrics" title="Link to this definition"></a></dt>
+<dd><p>Compute RSS, TSS, and R² for solution vs. experimental data.</p>
+<p>Uses the same valid points for RSS and TSS (NaNs excluded).
+TSS uses per-species means. R² = 1 - RSS/TSS.
+Returns the same dict shape as fit_metrics.fit_metrics(datasets, rss).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>expdata_df</strong> (<em>pandas.DataFrame</em>) – Time-course data. First column
+is time; remaining columns are species concentrations.
+Column names must match function_names.</p></li>
+<li><p><strong>solution</strong> (<em>scipy.integrate.OdeResult</em><em>, </em><em>optional</em>) – Solution to use
+when recompute=False. If None, uses the result of
+solve_system(). Defaults to None.</p></li>
+<li><p><strong>verbose</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, print RSS and R².
+Defaults to True.</p></li>
+<li><p><strong>recompute</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, re-integrate at
+experimental times for RSS. If False, use interpolation.
+Defaults to True.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Keys ‘rss’, ‘tss’, ‘r2’ (all float).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>RuntimeError</strong> – If no solution is available, or if recompute=True
+    but solve_system() has not been called.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.RxnODEsolver.solution_plot">
+<span class="sig-name descname"><span class="pre">solution_plot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">solution</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expdata_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">DataFrame</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">species</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subplot_layout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.solv_ode.RxnODEsolver.solution_plot" title="Link to this definition"></a></dt>
+<dd><p>Plot the time evolution of chemical species.</p>
+<p>Creates a time-course plot showing the simulated concentration of
+each species over time. Optionally overlays experimental data
+points with colors matching the simulation lines.
+Also prints the final concentrations at the last time point.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>solution</strong> (<em>scipy.integrate.OdeResult</em><em>, </em><em>optional</em>) – Solution
+object from solve_ivp to plot. If None, uses the solution
+stored internally from solve_system(). Defaults to None.</p></li>
+<li><p><strong>expdata_df</strong> (<em>pandas.DataFrame</em><em> or </em><em>list</em><em> of </em><em>DataFrame</em><em>, </em><em>optional</em>) – <p>Experimental data for overlay. Can be a single DataFrame or
+a list of DataFrames (e.g. from multiple CSVs). Format:
+- First column: time values (column name used for x-axis</p>
+<blockquote>
+<div><p>label unit, e.g. “t_s” -&gt; “Time (s)”).</p>
+</div></blockquote>
+<ul>
+<li><p>Subsequent columns: concentrations for each species.</p></li>
+<li><p>Column names must match species names (e.g. from
+self.builder.function_names).</p></li>
+</ul>
+<p>If a list with more than one DataFrame is given, one
+subplot is drawn per DataFrame (same solution curve,
+scatter from that DataFrame). If a single DataFrame or
+a list of length one is given, one figure with one axes
+is drawn. When a list is passed, the 0th column name must
+be identical across all DataFrames; otherwise a warning
+is emitted. Defaults to None.</p>
+</p></li>
+<li><p><strong>species</strong> (<em>list</em><em>[</em><em>str</em><em>]</em><em>, </em><em>optional</em>) – List of species names to plot.
+If None, all species in the ODE system are plotted.
+If provided, only these species are drawn. Any name not
+in the ODE system triggers a warning and ValueError.
+Defaults to None.</p></li>
+<li><p><strong>subplot_layout</strong> (<em>tuple</em><em>[</em><em>int</em><em>, </em><em>int</em><em>]</em><em>, </em><em>optional</em>) – (n_rows, n_cols)
+for the subplot grid when expdata_df is a list of multiple
+DataFrames. If None, defaults to (len(expdata_df), 1)
+(one column). Ignored when expdata_df is None or a single
+DataFrame. Defaults to None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – If a name in species is not in the ODE system.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.RxnODEsolver.solve_system">
+<span class="sig-name descname"><span class="pre">solve_system</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.solv_ode.RxnODEsolver.solve_system" title="Link to this definition"></a></dt>
+<dd><p>Solve the ODE system numerically.</p>
+<p>Performs numerical integration of the ODE system using scipy.solve_ivp.
+The solution is stored internally and also returned.
+When config has rate_const_values and symbolic_rate_const_keys set,
+uses the rate-constants ODE path; otherwise uses the standard path.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><dl class="simple">
+<dt>A tuple containing:</dt><dd><ul class="simple">
+<li><dl class="simple">
+<dt>ode_construct (tuple): ODE system construction data including</dt><dd><p>system_of_equations, sympy_symbol_dict, ode_system,
+function_names, and rate_consts_dict.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>solution (scipy.integrate.OdeResult): Solution object from</dt><dd><p>scipy.solve_ivp containing time points and concentrations.
+May be None if integration fails.</p>
+</dd>
+</dl>
+</li>
+</ul>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.RxnODEsolver.to_dataframe_list">
+<span class="sig-name descname"><span class="pre">to_dataframe_list</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">solution</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_column_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'time'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.solv_ode.RxnODEsolver.to_dataframe_list" title="Link to this definition"></a></dt>
+<dd><p>Return the solution(s) as a list of DataFrames.</p>
+<p>Works for both single and multiple datasets. Always returns a list;
+single solution yields a 1-element list.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>solution</strong> (<em>scipy.integrate.OdeResult</em><em>, </em><em>optional</em>) – Solution to
+convert. If None, uses the solution from solve_system().
+Defaults to None.</p></li>
+<li><p><strong>time_column_name</strong> (<em>str</em><em>, </em><em>optional</em>) – Name of the time column
+(first column). Defaults to “time”.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>One DataFrame per solution. Each has one row</dt><dd><p>per time point; first column is time, following columns are
+species concentrations (names from function_names).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list[pd.DataFrame]</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>RuntimeError</strong> – If no solution is available (solve_system not run).</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.SolverConfig">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">rxnfit.solv_ode.</span></span><span class="sig-name descname"><span class="pre">SolverConfig</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y0</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_span</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_eval</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'RK45'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1e-06</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rate_const_values</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">symbolic_rate_const_keys</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#rxnfit.solv_ode.SolverConfig" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Configuration parameters for the ODE solver.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.SolverConfig.y0">
+<span class="sig-name descname"><span class="pre">y0</span></span><a class="headerlink" href="#rxnfit.solv_ode.SolverConfig.y0" title="Link to this definition"></a></dt>
+<dd><p>Initial concentrations for all species (required).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.SolverConfig.t_span">
+<span class="sig-name descname"><span class="pre">t_span</span></span><a class="headerlink" href="#rxnfit.solv_ode.SolverConfig.t_span" title="Link to this definition"></a></dt>
+<dd><p>Time span for integration as (t_start, t_end)
+(required).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.SolverConfig.t_eval">
+<span class="sig-name descname"><span class="pre">t_eval</span></span><a class="headerlink" href="#rxnfit.solv_ode.SolverConfig.t_eval" title="Link to this definition"></a></dt>
+<dd><p>Time points at which to evaluate
+the solution. If None, the solver chooses the time points.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Optional[np.ndarray]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.SolverConfig.method">
+<span class="sig-name descname"><span class="pre">method</span></span><a class="headerlink" href="#rxnfit.solv_ode.SolverConfig.method" title="Link to this definition"></a></dt>
+<dd><p>Integration method to use. Defaults to “RK45”.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.SolverConfig.rtol">
+<span class="sig-name descname"><span class="pre">rtol</span></span><a class="headerlink" href="#rxnfit.solv_ode.SolverConfig.rtol" title="Link to this definition"></a></dt>
+<dd><p>Relative tolerance for the solver. Defaults to 1e-6.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.SolverConfig.rate_const_values">
+<span class="sig-name descname"><span class="pre">rate_const_values</span></span><a class="headerlink" href="#rxnfit.solv_ode.SolverConfig.rate_const_values" title="Link to this definition"></a></dt>
+<dd><p>When provided with symbolic_rate_const_keys, the solver uses the
+rate-constants ODE path: either a dict of rate constant values, or
+a callable (t) -&gt; dict for time-dependent rates. Must be used
+together with symbolic_rate_const_keys (both or neither).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Optional[Union[dict, Callable[[float], dict]]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="rxnfit.solv_ode.SolverConfig.symbolic_rate_const_keys">
+<span class="sig-name descname"><span class="pre">symbolic_rate_const_keys</span></span><a class="headerlink" href="#rxnfit.solv_ode.SolverConfig.symbolic_rate_const_keys" title="Link to this definition"></a></dt>
+<dd><p>Order of rate constant
+names passed to the ODE. Required when rate_const_values is set.
+Both must be set or both omitted; otherwise an error is raised.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Optional[List[str]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id0">
+<span class="sig-name descname"><span class="pre">method</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'RK45'</span></span><a class="headerlink" href="#id0" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id1">
+<span class="sig-name descname"><span class="pre">rate_const_values</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#id1" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id2">
+<span class="sig-name descname"><span class="pre">rtol</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1e-06</span></span><a class="headerlink" href="#id2" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id3">
+<span class="sig-name descname"><span class="pre">symbolic_rate_const_keys</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#id3" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id4">
+<span class="sig-name descname"><span class="pre">t_eval</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#id4" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id5">
+<span class="sig-name descname"><span class="pre">t_span</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">tuple</span></span><a class="headerlink" href="#id5" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id6">
+<span class="sig-name descname"><span class="pre">y0</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">list</span></span><a class="headerlink" href="#id6" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="rxnfit.rate_const_ft_eval.html" class="btn btn-neutral float-left" title="rxnfit.rate_const_ft_eval module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="rxnfit.expdata_reader.html" class="btn btn-neutral float-right" title="rxnfit.expdata_reader module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Mitsuru Ohno.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
