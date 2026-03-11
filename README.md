@@ -1,14 +1,16 @@
 
-## 1. Overviews
+## Overviews
 "rxnfit" is a Python module that builds ordinary differential equations (ODEs) for reaction kinetics from elementary reaction formulas and rate constants given in CSV format, and computes concentration time courses numerically.
 
 - When all rate constants are known, the time evolution of each species’ concentration is obtained by **numerical integration** of the ODEs (e.g. with `scipy.integrate.solve_ivp`).
 - When some rate constants are unknown, they can be **estimated by fitting** the ODE solution to experimental concentration time-course data (e.g. with `scipy.optimize.minimize`).
 - A rate constant may be given as an **expression** in other rate constants (e.g. k₂ = 2·k₁), or as a **function of time** *t* via an override CSV.
 
-**Documentation :** https://pejpohno.github.io/rxnfit/ 
+**Documentation :** https://pejpohno.github.io/rxnfit/  
+**Tutorial :** in preparation  
+**How to cite :** Ohno, M. rxnfit. GitHub. https://github.com/PEJpOhno/rxnfit (2026).  
 
-## 2. Current version and requirements
+## Current version and requirements
 - current version = 0.2.0
 - pyhon >=3.12
 
@@ -20,24 +22,21 @@
 - Matplotlib  
 - Optuna
 
-## 3. Copyright and license
+## Copyright and license
 Copyright (c) 2025 Mitsuru Ohno
 Released under the BSD-3 license, license that can be found in the LICENSE file.
 
-## 4. Installation
-1. Clome repository on your computer.
-https://github.com/PEJpOhno/rxnfit.git
-
-2. Create and activate a Python virtual environment.
+## Installation
+Create and activate a Python virtual environment, then  
 
 ```sh
-pip install ["PATH TO YOUR CLONED REPOSUTORY"]
+pip install rxnfit
 ```
 
-If you want to give it a quick try, just copy or move the example directory from the cloned repo to wherever it's convenient. Then, activate your virtual environment, start Jupyter Notebook, and open one of the sample scripts inside the example folder to test it out.
+If you want to give it a quick try, just copy or move the example directory from the cloned repo to wherever it's convenient. Then, activate your virtual environment, start Jupyter Notebook, and open one of the sample scripts inside "examples" directry to test it out.
 
-## 5. Usage
-### 5-1. Prepare csv file
+## Usage
+### Prepare csv file
 1. Describe reaction formula in csv format. THe first row shoud be header. The first column and the second column should be reaction ID (named RID) and the rate constant (named k). Other column names can be omitted.
 2. The reactants are putted in alternately with the coeficient and the chemical species. Each reaction should be described in one row.
 3. To separate the reactants and the products, two ">" are setted with two columns. As with reaction SMARTS, you may write reaction conditions between the two ">"; in the current version of rxnfit these are unused.
@@ -55,11 +54,11 @@ example of a csv format
     2,1.4,,AcOiPr,,OHa1,>,>,,AcOa1,,iPrOH
     3,0.031,,EGOAc2,2,OHa1,>,>,2,AcOa1,,EG
 
-## 6. Modules and classes
+## Modules and classes
 
 The following items are those prominently used in the example notebooks.
 
-### 6-1. rxn_reader
+### rxn_reader
 Reads reaction CSV and builds symbolic ODE system.
 
 | item | name | description |
@@ -69,7 +68,7 @@ Reads reaction CSV and builds symbolic ODE system.
 | function | get_unique_species | Extract unique species names from reaction list. |
 | function | rate_constants | Extract rate constant key and value (float or expression string) per reaction. |
 
-### 6-2. build_ode
+### build_ode
 Builds numerical ODE RHS from symbolic system; supports rate-constant overrides and time-dependent k(t).
 
 | item | name | description |
@@ -77,7 +76,7 @@ Builds numerical ODE RHS from symbolic system; supports rate-constant overrides 
 | class | RxnODEbuild | Extends RxnToODE. Builds callable ODE RHS for scipy.integrate.solve_ivp. Optional rate_const_overrides (dict or CSV path) and rate_const_overrides_encoding. Methods: create_ode_system(), create_ode_system_with_rate_consts(), get_ode_system(), get_ode_info(). |
 | function | create_system_rhs | Build (t, y) RHS for solve_ivp from ODE functions dict. Optional rate_const_values (dict or callable(t)) and symbolic_rate_const_keys for variable or time-dependent rate constants. |
 
-### 6-3. expdata_reader
+### expdata_reader
 Loads and aligns experimental time-course data.
 
 | item | name | description |
@@ -85,14 +84,14 @@ Loads and aligns experimental time-course data.
 | function | expdata_read | Read list of DataFrames into list of (t_list, C_exp_list) per dataset. |
 | function | get_y0_from_expdata | Initial concentrations per dataset in function_names order. |
 
-### 6-4. expdata_fit_sci
+### expdata_fit_sci
 Fits symbolic rate constants to experimental data (scipy.optimize.minimize).
 
 | item | name | description |
 |------|------|-------------|
 | class | ExpDataFitSci | Multi-dataset fitting. run_fit(p0, ...) returns (result, param_info, fit_metrics). result has .fun (RSS), .tss, .r2; fit_metrics is dict with keys 'rss', 'tss', 'r2'. get_solver_config_args(dataset_index), get_fitted_rate_const_dict(result). plot_fitted_solution(expdata_df, ...) plots per-dataset y0 curves after run_fit. to_dataframe_list() returns list of DataFrames (one per dataset). When model has k(t), get_solver_config_args() adds rate_const_values (callable) and symbolic_rate_const_keys after run_fit(). |
 
-### 6-5. solv_ode
+### solv_ode
 Numerical integration and plotting of ODE solutions.
 
 | item | name | description |
@@ -100,14 +99,14 @@ Numerical integration and plotting of ODE solutions.
 | class | SolverConfig | Dataclass: y0, t_span, t_eval, method, rtol. Optional: rate_const_values (dict or callable(t)), symbolic_rate_const_keys (both or neither). |
 | class | RxnODEsolver | Integrates ODE with builder and config. solve_system(), to_dataframe_list() returning list of DataFrames, eval_fit_metrics(expdata_df, ...) returning dict with 'rss', 'tss', 'r2', solution_plot(). When config has rate_const_values and symbolic_rate_const_keys, uses rate-constants ODE path. |
 
-### 6-6. p0_opt_fit
+### p0_opt_fit
 Optimizes initial parameter values (p0) for rate constants using Optuna, then fits with ExpDataFitSci.
 
 | item | name | description |
 |------|------|-------------|
 | class | P0OptFit | Optimizes p0 via Optuna (e.g. suggest_float with log=True) and runs ExpDataFitSci.run_fit with the best p0. optimize(n_trials, show_progress_bar, ...) returns (dict of variable → (initial, fitted), fit_metrics). fit_metrics is a dict with keys 'rss', 'tss', 'r2'. optuna_log() returns per-trial log. |
 
-## 7. References  
+## References  
 
 - **Python**: Python Software Foundation. (2024). *Python* (Version 3.13) [Computer software]. https://www.python.org/  
 - **NumPy**: Harris, C. R., Millman, K. J., van der Walt, S. J., et al. (2020). Array programming with NumPy. *Nature*, 585(7825), 357–362. https://doi.org/10.1038/s41586-020-2649-2
