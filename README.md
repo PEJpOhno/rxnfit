@@ -30,7 +30,7 @@ Released under the BSD-3 license, license that can be found in the LICENSE file.
 Create and activate a Python virtual environment, then  
 
 ```sh
-pip install rxnfit
+$pip install rxnfit
 ```
 
 If you want to give it a quick try, just copy or move the example directory from the cloned repo to wherever it's convenient. Then, activate your virtual environment, start Jupyter Notebook, and open one of the sample scripts inside "examples" directry to test it out.
