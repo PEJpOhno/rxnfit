@@ -12,6 +12,7 @@ description = "set up theoretical reaction kinetics equations"
 readme = "README.md"
 requires-python = ">=3.12"
 classifiers = [
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent", 
     "License :: OSI Approved :: BSD License"
