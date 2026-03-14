@@ -20,7 +20,7 @@ Overviews
 
 **Tutorial :** in preparation
 
-**How to cite :** Ohno, M. rxnfit. GitHub. https://github.com/PEJpOhno/rxnfit (2026).  
+**How to cite :** Ohno, M. rxnfit. GitHub. https://github.com/PEJpOhno/rxnfit (2023).  
 
 This module and its accompanying documentation were developed with the support of Cursor’s AI-assisted tools.  
 
@@ -37,6 +37,7 @@ This module and its accompanying documentation were developed with the support o
    rxnfit.expdata_fit_sci
    rxnfit.p0_opt_fit
    rxnfit.fit_metrics
+   rxnfit.plot_results
 
    
    

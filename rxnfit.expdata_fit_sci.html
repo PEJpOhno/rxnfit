@@ -6,14 +6,14 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>rxnfit.expdata_fit_sci module &mdash; rxnfit 20260310 documentation</title>
+  <title>rxnfit.expdata_fit_sci module &mdash; rxnfit 20260314 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=dac109aa"></script>
+      <script src="_static/documentation_options.js?v=26b0130d"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
@@ -65,6 +65,7 @@
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rxnfit.p0_opt_fit.html">rxnfit.p0_opt_fit module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rxnfit.fit_metrics.html">rxnfit.fit_metrics module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rxnfit.plot_results.html">rxnfit.plot_results module</a></li>
 </ul>
 
         </div>
@@ -170,7 +171,8 @@ rate_const_values, symbolic_rate_const_keys when k(t) present.</p>
 <p>Use after run_fit. Each subplot uses the y0 from the corresponding
 DataFrame’s first row. When expdata_df is None, uses self.df_list
 for experimental overlay. When plot_datasets is given, only those
-datasets are plotted (by df_names).</p>
+datasets are plotted (by df_names). Subplot titles use dataset names
+(df_names) when available; otherwise “Dataset 1”, “Dataset 2”, …</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -184,8 +186,11 @@ If None, all datasets are plotted.</p></li>
 <li><p><strong>subplot_layout</strong> – (n_rows, n_cols) for subplot grid.</p></li>
 </ul>
 </dd>
-<dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><ul class="simple">
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
 <li><p><strong>RuntimeError</strong> – If run_fit not executed.</p></li>
 <li><p><strong>ValueError</strong> – If length/column mismatch or unknown plot_datasets name.</p></li>
 </ul>
@@ -440,7 +445,7 @@ n_params, n_datasets, y0_list.</p></li>
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2026, Mitsuru Ohno.</p>
+    <p>&#169; Copyright 2023-2026, Mitsuru Ohno.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

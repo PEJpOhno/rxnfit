@@ -12,6 +12,7 @@ Submodules
    rxnfit.expdata_reader
    rxnfit.fit_metrics
    rxnfit.p0_opt_fit
+   rxnfit.plot_results
    rxnfit.rate_const_ft_eval
    rxnfit.rxn_reader
    rxnfit.solv_ode
