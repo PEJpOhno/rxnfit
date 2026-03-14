@@ -17,13 +17,12 @@ from sympy import Basic as SympyBasic
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
 from .build_ode import RxnODEbuild, create_system_rhs
-from .expdata_reader import get_time_unit_from_expdata
 from .fit_metrics import fit_metrics as compute_fit_metrics
 from .fit_metrics import expdata_df_to_datasets, TSS_MIN_THRESHOLD
+from .plot_results import plot_time_course_solutions
 
 
 def _ode_result_to_dataframe(sol, names, time_column_name="time"):
@@ -444,137 +443,10 @@ class RxnODEsolver:
             df_list = []
 
         solution_list = [sol] * max(1, len(df_list))
-        _plot_time_course_solutions(
+        plot_time_course_solutions(
             solution_list,
             df_list,
             self.builder.function_names,
             species=species,
             subplot_layout=subplot_layout,
         )
-
-
-def _plot_time_course_solutions(
-    solution_list,
-    df_list,
-    function_names,
-    species=None,
-    subplot_layout=None,
-):
-    """Plot time-course solutions. Shared by solution_plot and plot_fitted_solution.
-
-    Args:
-        solution_list: List of OdeResult or None. Length must match df_list when
-            df_list is non-empty. When df_list is empty, uses solution_list as-is.
-        df_list: List of DataFrames for experimental overlay. Can be empty
-            (integrate curves only). When non-empty, len must equal len(solution_list).
-        function_names: List of species names in ODE order.
-        species: Optional list of species to plot. If None, all species.
-        subplot_layout: Optional (n_rows, n_cols). Default (n_plots, 1).
-    """
-    all_species = list(function_names)
-    if species is None:
-        plot_species = all_species
-    else:
-        invalid = [s for s in species if s not in all_species]
-        if invalid:
-            raise ValueError(
-                f"Species not in the ODE system: {invalid}. "
-                f"Available: {all_species}"
-            )
-        plot_species = list(species)
-
-    name_to_idx = {name: i for i, name in enumerate(all_species)}
-    plot_items = [(name, name_to_idx[name]) for name in plot_species]
-
-    # Pad df_list when empty
-    if not df_list:
-        effective_df_list = [None] * len(solution_list)
-        time_unit = None
-    else:
-        if len(df_list) != len(solution_list):
-            raise ValueError(
-                f"Length mismatch: len(df_list)={len(df_list)}, "
-                f"len(solution_list)={len(solution_list)}"
-            )
-        effective_df_list = df_list
-        time_unit = get_time_unit_from_expdata(df_list)
-
-    valid_pairs = [
-        (idx, sol, plot_df)
-        for idx, (sol, plot_df) in enumerate(zip(solution_list, effective_df_list))
-        if sol is not None
-    ]
-    failed_pairs = [
-        (idx, plot_df)
-        for idx, (sol, plot_df) in enumerate(zip(solution_list, effective_df_list))
-        if sol is None
-    ]
-
-    for idx, plot_df in failed_pairs:
-        warnings.warn(
-            f"Integration failed for dataset {idx + 1}.",
-            UserWarning,
-            stacklevel=3,
-        )
-        if plot_df is not None:
-            print(f"  Failed DataFrame (dataset {idx + 1}):")
-            print(plot_df.head())
-
-    if not valid_pairs:
-        print("No successful integrations to plot.")
-        return
-
-    n_plots = len(valid_pairs)
-    n_rows, n_cols = (
-        subplot_layout if subplot_layout is not None else (n_plots, 1)
-    )
-    fig, axes = plt.subplots(
-        n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows)
-    )
-    if n_rows == 1 and n_cols == 1:
-        axes = np.array([[axes]])
-    elif n_rows == 1 or n_cols == 1:
-        axes = axes.reshape(n_rows, n_cols)
-
-    t_min_all = min(float(sol.t.min()) for _, sol, _ in valid_pairs)
-    t_max_all = max(float(sol.t.max()) for _, sol, _ in valid_pairs)
-
-    print("\n=== Time-course plot ===")
-
-    for plot_idx, (orig_idx, sol, plot_df) in enumerate(valid_pairs):
-        ax = axes.flat[plot_idx]
-        for species_name, i in plot_items:
-            line, = ax.plot(
-                sol.t, sol.y[i], label=species_name, linewidth=2
-            )
-            color = line.get_color()
-            if plot_df is not None and species_name in plot_df.columns:
-                t_exp = plot_df.iloc[:, 0].to_numpy()
-                c_exp = plot_df[species_name].to_numpy()
-                mask = ~np.isnan(c_exp)
-                ax.scatter(
-                    t_exp[mask], c_exp[mask],
-                    color=color, marker='o', s=50, zorder=5,
-                    edgecolors='white'
-                )
-        ax.set_xlim(t_min_all, t_max_all)
-        xlabel = (
-            f"Time ({time_unit})" if time_unit is not None
-            else "Time ()"
-        )
-        ax.set_xlabel(xlabel, fontsize=12)
-        ax.set_ylabel('Concentration', fontsize=12)
-        ax.set_title(f'Dataset {orig_idx + 1}', fontsize=14)
-        ax.legend(loc='best', fontsize=9)
-        ax.grid(True, alpha=0.3)
-
-    for idx in range(n_plots, axes.size):
-        axes.flat[idx].set_visible(False)
-    plt.tight_layout()
-    plt.show()
-
-    print("\n=== Concentration at the final time point ===")
-    for orig_idx, sol, _ in valid_pairs:
-        print(f"Dataset {orig_idx + 1}:")
-        for name, i in plot_items:
-            print(f"  {name}: {sol.y[i][-1]:.6f}")

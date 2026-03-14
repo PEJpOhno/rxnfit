@@ -8,10 +8,10 @@
 
 **Documentation :** https://pejpohno.github.io/rxnfit/  
 **Tutorial :** in preparation  
-**How to cite :** Ohno, M. rxnfit. GitHub. https://github.com/PEJpOhno/rxnfit (2026).  
+**How to cite :** Ohno, M. rxnfit. GitHub. https://github.com/PEJpOhno/rxnfit (2023).  
 
 ## Current version and requirements
-- current version = 0.2.0
+- current version = 0.3.0
 - pyhon >=3.12
 
 [dependencies]
@@ -23,7 +23,7 @@
 - Optuna
 
 ## Copyright and license
-Copyright (c) 2025 Mitsuru Ohno
+Copyright (c) 2023-2026 Mitsuru Ohno
 Released under the BSD-3 license, license that can be found in the LICENSE file.
 
 ## Installation
@@ -63,48 +63,47 @@ Reads reaction CSV and builds symbolic ODE system.
 
 | item | name | description |
 |------|------|-------------|
-| class | RxnToODE | Builds differential-type rate equations (strings) from reaction CSV, then ODE system expressions (SymPy). Attributes: rate_consts_dict, sympy_symbol_dict, sys_odes_dict, function_names. |
-| function | get_reactions | Parse reaction CSV into list of reaction data (RID, k, reactants, products, conditions). |
-| function | get_unique_species | Extract unique species names from reaction list. |
-| function | rate_constants | Extract rate constant key and value (float or expression string) per reaction. |
+| class | RxnToODE | Builds differential-type rate equations (strings) and SymPy ODE system from reaction CSV. Attributes: rate_consts_dict, sympy_symbol_dict, sys_odes_dict, function_names. |
+| function | get_reactions | Parses reaction CSV and returns a list of reaction data (RID, k, reactants, products, conditions). |
+| function | get_unique_species | Returns the list of unique species names from the reaction list. |
+| function | rate_constants | Returns rate constant key and value (float or expression string) per reaction. |
 
 ### build_ode
 Builds numerical ODE RHS from symbolic system; supports rate-constant overrides and time-dependent k(t).
 
 | item | name | description |
 |------|------|-------------|
-| class | RxnODEbuild | Extends RxnToODE. Builds callable ODE RHS for scipy.integrate.solve_ivp. Optional rate_const_overrides (dict or CSV path) and rate_const_overrides_encoding. Methods: create_ode_system(), create_ode_system_with_rate_consts(), get_ode_system(), get_ode_info(). |
-| function | create_system_rhs | Build (t, y) RHS for solve_ivp from ODE functions dict. Optional rate_const_values (dict or callable(t)) and symbolic_rate_const_keys for variable or time-dependent rate constants. |
+| class | RxnODEbuild | Extends RxnToODE. Builds a callable ODE RHS for scipy.integrate.solve_ivp from reaction CSV. Optional rate_const_overrides (dict or CSV path). Used in examples as the builder for RxnODEsolver and ExpDataFitSci. get_ode_info() prints species list and count so you can set SolverConfig.y0 in the correct order (same as function_names). |
 
 ### expdata_reader
 Loads and aligns experimental time-course data.
 
 | item | name | description |
 |------|------|-------------|
-| function | expdata_read | Read list of DataFrames into list of (t_list, C_exp_list) per dataset. |
-| function | get_y0_from_expdata | Initial concentrations per dataset in function_names order. |
+| function | expdata_read | Reads a list of DataFrames and returns, per dataset, (t_list, C_exp_list) for use in fitting or plotting. |
+| function | get_y0_from_expdata | Returns initial concentrations per dataset in the order of function_names (species order). |
 
 ### expdata_fit_sci
 Fits symbolic rate constants to experimental data (scipy.optimize.minimize).
 
 | item | name | description |
 |------|------|-------------|
-| class | ExpDataFitSci | Multi-dataset fitting. run_fit(p0, ...) returns (result, param_info, fit_metrics). result has .fun (RSS), .tss, .r2; fit_metrics is dict with keys 'rss', 'tss', 'r2'. get_solver_config_args(dataset_index), get_fitted_rate_const_dict(result). plot_fitted_solution(expdata_df, ...) plots per-dataset y0 curves after run_fit. to_dataframe_list() returns list of DataFrames (one per dataset). When model has k(t), get_solver_config_args() adds rate_const_values (callable) and symbolic_rate_const_keys after run_fit(). |
+| class | ExpDataFitSci | Fits symbolic rate constants to experimental time-course data (multi-dataset). run_fit(p0, ...) runs optimization and returns (result, param_info, fit_metrics); result has .fun (RSS), .tss, .r2; fit_metrics is a dict with keys 'rss', 'tss', 'r2'. plot_fitted_solution(expdata_df, ...) plots fitted time-courses with per-dataset y0 after run_fit. |
 
 ### solv_ode
 Numerical integration and plotting of ODE solutions.
 
 | item | name | description |
 |------|------|-------------|
-| class | SolverConfig | Dataclass: y0, t_span, t_eval, method, rtol. Optional: rate_const_values (dict or callable(t)), symbolic_rate_const_keys (both or neither). |
-| class | RxnODEsolver | Integrates ODE with builder and config. solve_system(), to_dataframe_list() returning list of DataFrames, eval_fit_metrics(expdata_df, ...) returning dict with 'rss', 'tss', 'r2', solution_plot(). When config has rate_const_values and symbolic_rate_const_keys, uses rate-constants ODE path. |
+| class | SolverConfig | Dataclass holding integration settings: y0, t_span, t_eval, method, rtol. Optionally rate_const_values and symbolic_rate_const_keys for time-dependent or variable rate constants. |
+| class | RxnODEsolver | Integrates ODEs with a builder and SolverConfig. solve_system() runs the integration. solution_plot() plots time-courses (optionally with experimental overlay). to_dataframe_list() returns a list of DataFrames (one per dataset). eval_fit_metrics(expdata_df, ...) returns a dict with 'rss', 'tss', 'r2'. |
 
 ### p0_opt_fit
 Optimizes initial parameter values (p0) for rate constants using Optuna, then fits with ExpDataFitSci.
 
 | item | name | description |
 |------|------|-------------|
-| class | P0OptFit | Optimizes p0 via Optuna (e.g. suggest_float with log=True) and runs ExpDataFitSci.run_fit with the best p0. optimize(n_trials, show_progress_bar, ...) returns (dict of variable → (initial, fitted), fit_metrics). fit_metrics is a dict with keys 'rss', 'tss', 'r2'. optuna_log() returns per-trial log. |
+| class | P0OptFit | Optimize initial parameter values (p0) for rate constants using Optuna, then run ExpDataFitSci. |
 
 ## References  
 
