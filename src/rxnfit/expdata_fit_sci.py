@@ -28,7 +28,8 @@ from .expdata_reader import (
 from .fit_metrics import fit_metrics as compute_fit_metrics
 from .fit_metrics import TSS_MIN_THRESHOLD
 from .rate_const_ft_eval import has_time_dependent_rates, build_evaluator
-from .solv_ode import _ode_result_to_dataframe, _plot_time_course_solutions
+from .plot_results import plot_time_course_solutions
+from .solv_ode import _ode_result_to_dataframe
 
 from typing import Optional, List, Union
 
@@ -488,10 +489,10 @@ class ExpDataFitSci:
             rtol (float, optional): Relative tolerance for solve_ivp.
                 Defaults to 1e-6.
             df_names (list[str], optional): Names for each DataFrame, used by
-                plot_fitted_solution(plot_datasets=[...]). If None, uses
-                df.attrs.get('name') for each DataFrame when present and
-                non-empty; otherwise falls back to str(i). Length must match
-                len(df_list) when provided.
+                plot_fitted_solution for plot_datasets selection and subplot
+                titles. If None, uses df.attrs.get('name') for each DataFrame
+                when present and non-empty; otherwise falls back to str(i).
+                Length must match len(df_list) when provided.
         """
         self.builded_rxnode = builded_rxnode
         self.df_list = df_list
@@ -734,7 +735,8 @@ class ExpDataFitSci:
         Use after run_fit. Each subplot uses the y0 from the corresponding
         DataFrame's first row. When expdata_df is None, uses self.df_list
         for experimental overlay. When plot_datasets is given, only those
-        datasets are plotted (by df_names).
+        datasets are plotted (by df_names). Subplot titles use dataset names
+        (df_names) when available; otherwise "Dataset 1", "Dataset 2", ...
 
         Args:
             expdata_df: Experimental data for overlay. Single DataFrame or
@@ -745,6 +747,9 @@ class ExpDataFitSci:
                 If None, all datasets are plotted.
             species: Species to plot. If None, all.
             subplot_layout: (n_rows, n_cols) for subplot grid.
+
+        Returns:
+            None
 
         Raises:
             RuntimeError: If run_fit not executed.
@@ -795,13 +800,15 @@ class ExpDataFitSci:
             self._fit_ctx, list(self._result.x)
         )
         solution_list = [solution_list_full[i] for i in plot_indices]
+        dataset_labels = [df_names[i] for i in plot_indices]
 
-        _plot_time_course_solutions(
+        plot_time_course_solutions(
             solution_list,
             df_list_filtered,
             self._param_info['function_names'],
             species=species,
             subplot_layout=subplot_layout,
+            dataset_labels=dataset_labels,
         )
 
     def to_dataframe_list(self, time_column_name="time"):
