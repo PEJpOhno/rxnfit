@@ -1,2 +1,2 @@
 ﻿k,f(t)
-kp,km*exp(-a*t)
+kp,a*km*exp(-b*t)
