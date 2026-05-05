@@ -34,11 +34,10 @@ This module and its accompanying documentation were developed with the support o
    rxnfit.rate_const_ft_eval
    rxnfit.solv_ode
    rxnfit.expdata_reader
-   rxnfit.expdata_fit_sci
+   rxnfit.expdata_fit
    rxnfit.p0_opt_fit
    rxnfit.fit_metrics
    rxnfit.plot_results
-
-   
-   
-
+   rxnfit.solver_backend
+   rxnfit.lsoda_p_vector
+   rxnfit.numbalsoda_rhs

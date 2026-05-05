@@ -4,6 +4,13 @@
 
 # 08/30/2025, M. Ohno
 
+"""Parse reaction CSVs and derive symbolic kinetic ODEs.
+
+Loads elementary reactions in spreadsheet form, resolves species and rate
+identifiers, and builds :class:`RxnToODE` systems for downstream numerical
+builders in :mod:`rxnfit.build_ode`.
+"""
+
 import csv
 from collections import defaultdict
 

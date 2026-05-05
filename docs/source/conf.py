@@ -5,9 +5,12 @@
 
 import sys
 from pathlib import Path
-import rxnfit
 
-sys.path.insert(0, str(Path('..', 'src').resolve()))
+# conf.py は docs/source にあるため、リポジトリの src を import より前に追加する
+_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_ROOT / 'src'))
+
+import rxnfit
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information

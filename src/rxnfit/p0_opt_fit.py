@@ -2,11 +2,11 @@
 # Use of this source code is governed by a BSD-3-style
 # license that can be found in the LICENSE file.
 
-"""Optimization of initial parameter values (p0) for ODE rate constants using Optuna.
+"""Optuna search for initial rate parameters before gradient-based fitting.
 
-This module provides P0OptFit to find optimal p0 via Optuna and then fit rate
-constants using expdata_fit_sci. Existing .py files are not modified; this
-module only imports and calls build_ode, expdata_fit_sci, etc.
+:class:`P0OptFit` proposes trial points with Optuna, scores them with a light
+wrapper around :class:`rxnfit.expdata_fit.ExpDataFit`, and returns refined
+estimates for downstream ``scipy.optimize`` runs.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from optuna.exceptions import TrialPruned
 from optuna.trial import TrialState
 
 from .build_ode import RxnODEbuild
-from .expdata_fit_sci import ExpDataFitSci
+from .expdata_fit import ExpDataFit
 
 # Default exploration range (low, high) per spec
 _DEFAULT_LOW = 1e-8
@@ -70,7 +70,7 @@ def _resolve_param_bounds(
 
 
 class P0OptFit:
-    """Optimize initial parameter values (p0) for ODE rate constants using Optuna, then fit with ExpDataFitSci.
+    """Optimize initial parameter values (p0) for ODE rate constants using Optuna, then fit with ExpDataFit.
 
     By default no random seed is set; Optuna uses its default (TPESampler without seed).
     Pass seed in the constructor for reproducible search.
@@ -166,7 +166,7 @@ class P0OptFit:
 
         bounds = [(self._bounds_per_param[i][0], None) for i in range(len(self._symbolic_keys))]
 
-        fit = ExpDataFitSci(
+        fit = ExpDataFit(
             self._builded_rxnode,
             self._df_list,
             self._t_range,
@@ -239,7 +239,7 @@ class P0OptFit:
         p0_best = [best.params[name] for name in self._symbolic_keys]
         bounds = [(self._bounds_per_param[i][0], None) for i in range(len(self._symbolic_keys))]
 
-        fit = ExpDataFitSci(
+        fit = ExpDataFit(
             self._builded_rxnode,
             self._df_list,
             self._t_range,

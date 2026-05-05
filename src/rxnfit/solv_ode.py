@@ -4,9 +4,10 @@
 
 # 09/07/2025, M. Ohno
 
-"""
-Calculate and visualize the time evolution of chemical species
-based on reaction rate equations with all rate constants known.
+"""Integrate and plot concentration trajectories when rate laws are fully specified.
+
+Uses :func:`rxnfit.solver_backend.solve_ode` for time stepping (including
+optional LSODA / numbalsoda; see that module for dispatch rules and fallbacks).
 """
 
 from dataclasses import dataclass, field
@@ -17,24 +18,29 @@ from sympy import Basic as SympyBasic
 
 import numpy as np
 import pandas as pd
-from scipy.integrate import solve_ivp
 
 from .build_ode import RxnODEbuild, create_system_rhs
+from .rate_const_ft_eval import has_time_dependent_rates
 from .fit_metrics import fit_metrics as compute_fit_metrics
 from .fit_metrics import expdata_df_to_datasets, TSS_MIN_THRESHOLD
 from .plot_results import plot_time_course_solutions
+from .solver_backend import (
+    LsodaImplicitTEvalMode,
+    build_t_eval_when_none_for_lsoda,
+    solve_ode,
+)
 
 
 def _ode_result_to_dataframe(sol, names, time_column_name="time"):
-    """Convert OdeResult to a single DataFrame.
+    """Convert an ODE solution object to a single time-course DataFrame.
 
     Args:
-        sol: scipy.integrate.OdeResult from solve_ivp.
-        names: List of species names (function_names order).
-        time_column_name: Name for the time column. Default "time".
+        sol: Object with ``t`` and ``y`` (SciPy ``OdeResult`` or compatible).
+        names: Species column names in the same order as ``y`` rows.
+        time_column_name: Name of the time column. Defaults to ``"time"``.
 
     Returns:
-        pd.DataFrame: Time in first column, species concentrations in rest.
+        DataFrame whose first column is time and remaining columns are species.
     """
     data = {time_column_name: sol.t}
     for i, name in enumerate(names):
@@ -44,24 +50,20 @@ def _ode_result_to_dataframe(sol, names, time_column_name="time"):
 
 @dataclass
 class SolverConfig:
-    """Configuration parameters for the ODE solver.
+    """User-facing options for :class:`RxnODEsolver`.
 
     Attributes:
-        y0 (list): Initial concentrations for all species (required).
-        t_span (tuple): Time span for integration as (t_start, t_end)
-            (required).
-        t_eval (Optional[np.ndarray]): Time points at which to evaluate
-            the solution. If None, the solver chooses the time points.
-        method (str): Integration method to use. Defaults to "RK45".
-        rtol (float): Relative tolerance for the solver. Defaults to 1e-6.
-        rate_const_values (Optional[Union[dict, Callable[[float], dict]]]):
-            When provided with symbolic_rate_const_keys, the solver uses the
-            rate-constants ODE path: either a dict of rate constant values, or
-            a callable (t) -> dict for time-dependent rates. Must be used
-            together with symbolic_rate_const_keys (both or neither).
-        symbolic_rate_const_keys (Optional[List[str]]): Order of rate constant
-            names passed to the ODE. Required when rate_const_values is set.
-            Both must be set or both omitted; otherwise an error is raised.
+        y0: Initial state (species concentrations in ``function_names`` order).
+        t_span: Integration window ``(t_start, t_end)``.
+        t_eval: Optional dense output times. For ``method="LSODA"`` without
+            time-dependent rates, a grid may be built automatically when omitted.
+        method: Integrator label passed to :func:`~rxnfit.solver_backend.solve_ode`.
+        rtol: Relative tolerance.
+        rate_const_values: Fixed dict ``k -> float`` or ``(t) -> dict`` when
+            using lambdified ODEs with explicit rate arguments.
+        symbolic_rate_const_keys: Parameter order for those ODE signatures.
+            ``rate_const_values`` and ``symbolic_rate_const_keys`` must both be set
+            or both omitted.
     """
     y0: list
     t_span: tuple
@@ -72,33 +74,39 @@ class SolverConfig:
     symbolic_rate_const_keys: Optional[List[str]] = field(default=None)
 
 
+def _solver_time_dependent(builder: RxnODEbuild, config: SolverConfig) -> bool:
+    rcv = getattr(config, "rate_const_values", None)
+    if callable(rcv):
+        return True
+    return has_time_dependent_rates(builder.rate_consts_dict)
+
+
 class RxnODEsolver:
-    """Solver for ODE systems representing chemical reaction kinetics.
-    
-    This class integrates ODE systems using scipy.solve_ivp and provides
-    methods to visualize the time evolution of chemical species and to
-    compare the solution with experimental data (eval_fit_metrics).
+    """Integrate reaction-network ODEs and compare against experiments.
+
+    Time stepping is delegated to :func:`~rxnfit.solver_backend.solve_ode`
+    (LSODA / numbalsoda policy is documented there). Plotting and RSS-based
+    metrics reuse :mod:`rxnfit.plot_results` and :mod:`rxnfit.fit_metrics`.
 
     Attributes:
-        builder (RxnODEbuild): The ODE builder instance containing the
-            reaction system definition.
-        config (SolverConfig): Configuration parameters for the solver.
-        ode_construct (tuple, optional): ODE system construction data.
-            Set after calling solve_system().
-        solution (scipy.integrate.OdeResult, optional): Solution from
-            numerical integration. Set after calling solve_system().
+        builder: Reaction system and RHS factory.
+        config: Solver options.
+        ode_construct: Tuple from the builder after :meth:`solve_system`.
+        solution: Latest integration result, or ``None`` if integration failed.
     """
-    
+
     def __init__(self, builder: RxnODEbuild, config: SolverConfig):
-        """Initialize the ODE solver.
-        
+        """Validate configuration and attach the builder.
+
         Args:
-            builder (RxnODEbuild): The ODE builder instance containing
-                the reaction system definition.
-            config (SolverConfig): Configuration parameters for the solver.
-        
+            builder: Prepared :class:`~rxnfit.build_ode.RxnODEbuild` instance.
+            config: Non-conflicting :class:`SolverConfig`.
+
         Raises:
-            SystemExit: If rate constants validation fails.
+            ValueError: If only one of ``rate_const_values`` and
+                ``symbolic_rate_const_keys`` is set.
+            SystemExit: Process exits with status 1 when stored rate constants
+                are neither numeric nor SymPy-expressible (legacy behavior).
         """
         # rate_const_values と symbolic_rate_const_keys は両方指定か両方省略
         rcv = getattr(config, 'rate_const_values', None)
@@ -121,17 +129,13 @@ class RxnODEsolver:
         self.solution = None
 
     def _validate_rate_constants(self, rate_consts_dict):
-        """Validate that all rate constants are numeric or symbolic.
-        
-        Checks that all values in the rate constants dictionary are either
-        numeric types (int, float) or SymPy symbolic expressions. This
-        ensures the rate constants are suitable for numerical integration.
-        
+        """Return whether every rate entry is a Python ``int``/``float`` or SymPy ``Basic``.
+
         Args:
-            rate_consts_dict (dict): Dictionary of rate constants.
-            
+            rate_consts_dict: Mapping of rate names to values (must be a dict).
+
         Returns:
-            bool: True if all values are numeric or symbolic, False otherwise.
+            ``True`` only when all values pass the check (``False`` if not a dict).
         """
         if not isinstance(rate_consts_dict, dict):
             return False
@@ -148,24 +152,30 @@ class RxnODEsolver:
         return True
 
     def solve_system(self):
-        """Solve the ODE system numerically.
-
-        Performs numerical integration of the ODE system using scipy.solve_ivp.
-        The solution is stored internally and also returned.
-        When config has rate_const_values and symbolic_rate_const_keys set,
-        uses the rate-constants ODE path; otherwise uses the standard path.
+        """Integrate the model and cache ``ode_construct`` and ``solution``.
 
         Returns:
-            tuple: A tuple containing:
-                - ode_construct (tuple): ODE system construction data including
-                    system_of_equations, sympy_symbol_dict, ode_system,
-                    function_names, and rate_consts_dict.
-                - solution (scipy.integrate.OdeResult): Solution object from
-                    scipy.solve_ivp containing time points and concentrations.
-                    May be None if integration fails.
+            A pair ``(ode_construct, solution)``. ``solution`` is ``None`` only
+            when integration raises; otherwise it is the integrator output (check
+            ``success`` on SciPy-style results). Failures without exceptions still
+            return a result object.
         """
         rcv = getattr(self.config, 'rate_const_values', None)
         srck = getattr(self.config, 'symbolic_rate_const_keys', None)
+        td = _solver_time_dependent(self.builder, self.config)
+        method_u = str(self.config.method).upper()
+        t_eval = self.config.t_eval
+        if method_u == "LSODA" and t_eval is None and not td:
+            t_eval = build_t_eval_when_none_for_lsoda(
+                LsodaImplicitTEvalMode.SOLVE_SYSTEM,
+                t_span=self.config.t_span,
+            )
+        numb_ctx = {
+            "builder": self.builder,
+            "time_dependent": td,
+            "rate_const_values": rcv,
+            "symbolic_rate_const_keys": srck,
+        }
 
         if rcv is not None and srck is not None:
             ode_system, symbolic_rate_const_keys = (
@@ -176,22 +186,30 @@ class RxnODEsolver:
                 self.builder.function_names,
                 rate_const_values=rcv,
                 symbolic_rate_const_keys=srck,
+                numbalsoda_context=numb_ctx,
             )
         else:
             ode_construct = self.builder.get_ode_system()
             (system_of_equations, sympy_symbol_dict,
              ode_system, function_names, rate_consts_dict) = ode_construct
-            system_rhs = create_system_rhs(ode_system, function_names)
+            system_rhs = create_system_rhs(
+                ode_system,
+                function_names,
+                numbalsoda_context=numb_ctx,
+            )
 
         solution = None
         try:
-            solution = solve_ivp(
+            if t_eval is not None:
+                t_eval = np.sort(np.unique(np.asarray(t_eval, dtype=np.float64).ravel()))
+            solution = solve_ode(
                 system_rhs,
                 self.config.t_span,
                 self.config.y0,
-                t_eval=self.config.t_eval,
+                t_eval=t_eval,
                 method=self.config.method,
-                rtol=self.config.rtol
+                rtol=self.config.rtol,
+                time_dependent=td,
             )
         except Exception as e:
             print(f"An error occurred during numerical integration.: {e}")
@@ -212,25 +230,17 @@ class RxnODEsolver:
         return ode_construct, solution
 
     def to_dataframe_list(self, solution=None, time_column_name="time"):
-        """Return the solution(s) as a list of DataFrames.
-
-        Works for both single and multiple datasets. Always returns a list;
-        single solution yields a 1-element list.
+        """Convert ``solution`` (or the cached one) to a one-element DataFrame list.
 
         Args:
-            solution (scipy.integrate.OdeResult, optional): Solution to
-                convert. If None, uses the solution from solve_system().
-                Defaults to None.
-            time_column_name (str, optional): Name of the time column
-                (first column). Defaults to "time".
+            solution: Optional override; defaults to :attr:`solution`.
+            time_column_name: Name of the leading time column.
 
         Returns:
-            list[pd.DataFrame]: One DataFrame per solution. Each has one row
-                per time point; first column is time, following columns are
-                species concentrations (names from function_names).
+            ``[DataFrame]`` with species columns named like ``function_names``.
 
         Raises:
-            RuntimeError: If no solution is available (solve_system not run).
+            RuntimeError: When no solution exists.
         """
         sol = solution if solution is not None else self.solution
         if sol is None:
@@ -241,7 +251,25 @@ class RxnODEsolver:
         return [_ode_result_to_dataframe(sol, names, time_column_name)]
 
     def _compute_rss(self, expdata_df, solution=None, recompute=True):
-        """Compute RSS at experimental time points (internal)."""
+        """Residual sum of squares against ``expdata_df``.
+
+        Args:
+            expdata_df: Experimental table; column 0 is time, others species.
+            solution: Model trajectory used when ``recompute`` is False.
+            recompute: If True, integrate again on the union of experimental times.
+
+        Returns:
+            Scalar RSS.
+
+        Raises:
+            RuntimeError: Missing ``ode_construct``, no valid experimental times,
+                or trajectory missing when interpolation is needed.
+
+        Note:
+            If re-integration raises or returns ``success=False``, a warning is
+            issued and RSS falls back to :meth:`_compute_rss_interp` instead of
+            raising immediately.
+        """
         if recompute:
             if self.ode_construct is None:
                 raise RuntimeError(
@@ -249,6 +277,13 @@ class RxnODEsolver:
                 )
             rcv = getattr(self.config, 'rate_const_values', None)
             srck = getattr(self.config, 'symbolic_rate_const_keys', None)
+            td = _solver_time_dependent(self.builder, self.config)
+            numb_ctx = {
+                "builder": self.builder,
+                "time_dependent": td,
+                "rate_const_values": rcv,
+                "symbolic_rate_const_keys": srck,
+            }
             if rcv is not None and srck is not None:
                 ode_system, _ = self.builder.create_ode_system_with_rate_consts()
                 system_rhs = create_system_rhs(
@@ -256,6 +291,7 @@ class RxnODEsolver:
                     self.builder.function_names,
                     rate_const_values=rcv,
                     symbolic_rate_const_keys=srck,
+                    numbalsoda_context=numb_ctx,
                 )
             else:
                 (
@@ -265,7 +301,11 @@ class RxnODEsolver:
                     function_names,
                     _,
                 ) = self.ode_construct
-                system_rhs = create_system_rhs(ode_system, function_names)
+                system_rhs = create_system_rhs(
+                    ode_system,
+                    function_names,
+                    numbalsoda_context=numb_ctx,
+                )
             t_col = expdata_df.iloc[:, 0].dropna()
             if len(t_col) == 0:
                 raise RuntimeError(
@@ -273,13 +313,14 @@ class RxnODEsolver:
                 )
             t_eval = np.sort(np.unique(t_col.to_numpy()))
             try:
-                sol_new = solve_ivp(
+                sol_new = solve_ode(
                     system_rhs,
                     self.config.t_span,
                     self.config.y0,
                     t_eval=t_eval,
                     method=self.config.method,
                     rtol=self.config.rtol,
+                    time_dependent=td,
                 )
                 if not sol_new.success:
                     raise RuntimeError(
@@ -314,7 +355,18 @@ class RxnODEsolver:
         return self._compute_rss_interp(expdata_df, solution)
 
     def _compute_rss_interp(self, expdata_df, solution=None):
-        """Compute RSS by interpolating the solution (internal)."""
+        """RSS via linear interpolation of an existing trajectory.
+
+        Args:
+            expdata_df: Same layout as :meth:`_compute_rss`.
+            solution: Trajectory to interpolate; defaults to :attr:`solution`.
+
+        Returns:
+            Scalar RSS.
+
+        Raises:
+            RuntimeError: When no trajectory is available.
+        """
         sol = solution if solution is not None else self.solution
         if sol is None:
             raise RuntimeError(
@@ -339,31 +391,26 @@ class RxnODEsolver:
         return float(rss)
 
     def eval_fit_metrics(self, expdata_df, solution=None, verbose=True, recompute=True):
-        """Compute RSS, TSS, and R² for solution vs. experimental data.
+        """Return ``{'rss', 'tss', 'r2'}`` using :func:`~rxnfit.fit_metrics.fit_metrics`.
 
-        Uses the same valid points for RSS and TSS (NaNs excluded).
-        TSS uses per-species means. R² = 1 - RSS/TSS.
-        Returns the same dict shape as fit_metrics.fit_metrics(datasets, rss).
+        NaNs are dropped consistently; TSS is per-species about the experimental mean.
 
         Args:
-            expdata_df (pandas.DataFrame): Time-course data. First column
-                is time; remaining columns are species concentrations.
-                Column names must match function_names.
-            solution (scipy.integrate.OdeResult, optional): Solution to use
-                when recompute=False. If None, uses the result of
-                solve_system(). Defaults to None.
-            verbose (bool, optional): If True, print RSS and R².
-                Defaults to True.
-            recompute (bool, optional): If True, re-integrate at
-                experimental times for RSS. If False, use interpolation.
-                Defaults to True.
+            expdata_df: Time in column 0; species columns match ``function_names``.
+            solution: Optional trajectory for the interpolation path.
+            verbose: Print RSS and R² when true.
+            recompute: Forwarded to :meth:`_compute_rss`.
 
         Returns:
-            dict: Keys 'rss', 'tss', 'r2' (all float).
+            Metric dictionary of floats.
 
         Raises:
-            RuntimeError: If no solution is available, or if recompute=True
-                but solve_system() has not been called.
+            RuntimeError: Same as :meth:`_compute_rss` (interpolation path).
+
+        Note:
+            :func:`~rxnfit.fit_metrics.expdata_df_to_datasets` may raise
+            ``ValueError`` if species columns required by ``function_names`` are
+            missing from ``expdata_df``.
         """
         rss = self._compute_rss(expdata_df, solution, recompute)
         datasets = expdata_df_to_datasets(expdata_df, self.builder.function_names)
@@ -388,48 +435,25 @@ class RxnODEsolver:
         species: Optional[List[str]] = None,
         subplot_layout: Optional[Tuple[int, int]] = None,
     ):
-        """Plot the time evolution of chemical species.
+        """Plot concentrations and optional experimental overlays.
 
-        Creates a time-course plot showing the simulated concentration of
-        each species over time. Optionally overlays experimental data
-        points with colors matching the simulation lines.
-        Also prints the final concentrations at the last time point.
+        Delegates layout to :func:`~rxnfit.plot_results.plot_time_course_solutions`.
 
         Args:
-            solution (scipy.integrate.OdeResult, optional): Solution
-                object from solve_ivp to plot. If None, uses the solution
-                stored internally from solve_system(). Defaults to None.
-            expdata_df (pandas.DataFrame or list of DataFrame, optional):
-                Experimental data for overlay. Can be a single DataFrame or
-                a list of DataFrames (e.g. from multiple CSVs). Format:
-                - First column: time values (column name used for x-axis
-                  label unit, e.g. "t_s" -> "Time (s)").
-                - Subsequent columns: concentrations for each species.
-                - Column names must match species names (e.g. from
-                  self.builder.function_names).
-                If a list with more than one DataFrame is given, one
-                subplot is drawn per DataFrame (same solution curve,
-                scatter from that DataFrame). If a single DataFrame or
-                a list of length one is given, one figure with one axes
-                is drawn. When a list is passed, the 0th column name must
-                be identical across all DataFrames; otherwise a warning
-                is emitted. Defaults to None.
-            species (list[str], optional): List of species names to plot.
-                If None, all species in the ODE system are plotted.
-                If provided, only these species are drawn. Any name not
-                in the ODE system triggers a warning and ValueError.
-                Defaults to None.
-            subplot_layout (tuple[int, int], optional): (n_rows, n_cols)
-                for the subplot grid when expdata_df is a list of multiple
-                DataFrames. If None, defaults to (len(expdata_df), 1)
-                (one column). Ignored when expdata_df is None or a single
-                DataFrame. Defaults to None.
+            solution: Trajectory to plot; defaults to :attr:`solution`.
+            expdata_df: One or more DataFrames (time + species); multiple frames
+                create one subplot each while reusing the same simulated curve.
+            species: Subset of ``function_names``; ``None`` plots every species.
+            subplot_layout: ``(rows, cols)`` when several DataFrames are supplied;
+                ``None`` picks a vertical stack.
 
         Returns:
-            None
+            ``None``. The plotting helper returns ``(fig, axes)``, which this
+            method does not pass through.
 
         Raises:
-            ValueError: If a name in species is not in the ODE system.
+            ValueError: Passed through when ``species`` names are absent from the
+                ODE species list (see :func:`~rxnfit.plot_results.plot_time_course_solutions`).
         """
         sol = solution if solution is not None else self.solution
         if sol is None:

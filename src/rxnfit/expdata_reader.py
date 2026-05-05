@@ -4,12 +4,11 @@
 
 # 01/03/2026, M. Ohno
 
-"""Load experimental time-course data from DataFrames.
+"""Load experimental time courses and align them with ODE species order.
 
-Experimental data is passed as a list of DataFrames and returned as a list
-of (t_list, C_exp_list) tuples. Functions handle missing values and align
-data to ODE function names order. Time column (0th column) unit and
-consistency across DataFrames are also provided.
+Splits ``pandas.DataFrame`` inputs into valid (time, concentration) series per
+species, drops NaNs consistently, and reorders columns to match
+``function_names`` from the kinetic model.
 """
 
 import warnings

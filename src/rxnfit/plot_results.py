@@ -2,12 +2,11 @@
 # Use of this source code is governed by a BSD-3-style
 # license that can be found in the LICENSE file.
 
-"""Plot time-course results of ODE solutions.
+"""Matplotlib helpers for simulated or fitted concentration time courses.
 
-This module provides plotting functions for reaction kinetics simulation
-results. Used by RxnODEsolver.solution_plot() and ExpDataFitSci.plot_fitted_solution(),
-and can be used directly by other features (e.g. sensitivity analysis,
-uncertainty visualization).
+Primary call sites are :meth:`rxnfit.solv_ode.RxnODEsolver.solution_plot` and
+:meth:`rxnfit.expdata_fit.ExpDataFit.plot_fitted_solution`; the functions here
+accept generic solution objects and optional experimental overlays.
 """
 
 import warnings

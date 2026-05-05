@@ -7,7 +7,7 @@
 ## 1. 目的・背景
 
 - rxnfit では初期値を与え、データへのフィッティングにより速度定数を求めている。速度定数はおおよそ 10^2 ～ 10^(-8) 程度の幅をもつ。
-- 初期値依存の影響を避けるため、**Optuna で最適な初期値を求め**、その初期値を用いて **expdata_fit_sci** で解（フィッティング結果）を求める。
+- 初期値依存の影響を避けるため、**Optuna で最適な初期値を求め**、その初期値を用いて **expdata_fit** で解（フィッティング結果）を求める。
 - **既存の .py は変更しない**。必要に応じて既存の class / function を呼び出す。
 - 対象とする速度定数は **build_ode** で指定されるシンボリックな定数（`get_symbolic_rate_const_keys()` で取得）。微分方程式の求解には **solv_ode** を用いてもよい。
 
@@ -52,7 +52,7 @@
 
 ## 5. run_fit まわりの仕様
 
-- run_fit に渡すオプション（opt_method, bounds, use_log_fit, lower_bound, verbose など）は、指定可能な引数として用意する。指定がなければ expdata_fit_sci のデフォルト（または本クラスで定めたデフォルト）に従う。
+- run_fit に渡すオプション（opt_method, bounds, use_log_fit, lower_bound, verbose など）は、指定可能な引数として用意する。指定がなければ expdata_fit のデフォルト（または本クラスで定めたデフォルト）に従う。
 - **run_fit の bounds** は、各パラメータについて **Optuna で使う最小値** から組み立てる（Optuna 設定の最小値に従う）。
 
 ---
@@ -106,7 +106,7 @@
 ## 10. 参照モジュール（変更しない）
 
 - **build_ode**: RxnODEbuild, get_symbolic_rate_const_keys, create_ode_system_with_rate_consts, create_system_rhs 等。
-- **expdata_fit_sci**: ExpDataFitSci, run_fit, solve_fit_model_multi 等。
+- **expdata_fit**: ExpDataFit, run_fit, solve_fit_model_multi 等。
 - **solv_ode**: RxnODEsolver, SolverConfig 等（必要に応じて呼び出す）。
 - **rxn_reader**: 反応 CSV 読み込みは RxnODEbuild 経由で利用（直接 import しない）。
 
@@ -120,7 +120,7 @@
 
 | メリット | デメリット |
 |----------|------------|
-| **既存 rxnfit とそのまま接続できる**。build_ode / expdata_fit_sci / solv_ode を変更せず呼び出せる。 | **1 トライアルあたり scipy.minimize が 1 回走る**ため、トライアル数が多いと計算時間が長くなりやすい。 |
+| **既存 rxnfit とそのまま接続できる**。build_ode / expdata_fit / solv_ode を変更せず呼び出せる。 | **1 トライアルあたり scipy.minimize が 1 回走る**ため、トライアル数が多いと計算時間が長くなりやすい。 |
 | **scipy.integrate.solve_ivp** は stiff 問題にも対応したメソッド（例: Radau, BDF）を選べ、桁が広い速度定数でも安定した積分が期待できる。 | 勾配を使わない（または数値微分）ため、パラメータ数が非常に多いと効率が落ちる可能性がある。 |
 | **Optuna** で初期値を広い範囲（とくに log スケール）から探索できるため、局所解に陥りにくく、初期値依存性を抑えやすい。 | 並列化は Optuna の n_jobs や RDB に依存し、GPU は通常使わない。 |
 | **解の解釈がしやすい**。速度定数がそのまま実数で得られ、既存の CSV／SymPy ベースのワークフローと一致する。 | 残差の勾配を陽に使わないため、torchdiffeq のような「1 回の積分で勾配まで一括計算」にはならない。 |
@@ -139,7 +139,7 @@
 
 - **スティフネス・スケール**: 速度定数が桁で大きく違うと ODE は stiff になりやすい。scipy は Radau/BDF など stiff 対応ソルバが充実している。torchdiffeq でも stiff 対応は可能だが、スケーリングやソルバ選択の調整が求められる。
 - **探索の仕方**: Optuna は「初期値」を広域からサンプリングし、そのうえで scipy でフィットするため、**初期値の取り方の影響を抑えつつ、既存のフィット処理をそのまま使える**。torchdiffeq は勾配で効率よく下るが、初期パラメータが悪いと局所解に収束しやすく、広域探索は別途（例: 複数初期値や Optuna と組み合わせ）検討が必要。
-- **既存資産**: rxnfit は build_ode（SymPy）→ solve_ivp / ExpDataFitSci の流れで一貫している。この流れを活かすなら Optuna + scipy の方が自然。
+- **既存資産**: rxnfit は build_ode（SymPy）→ solve_ivp / ExpDataFit の流れで一貫している。この流れを活かすなら Optuna + scipy の方が自然。
 
 ### 推奨
 

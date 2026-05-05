@@ -4,9 +4,16 @@
 
 # 08/30/2025, M. Ohno
 
+"""Numerical RHS builders from symbolic reaction-network ODEs.
+
+:class:`RxnODEbuild` subclasses :class:`~rxnfit.rxn_reader.RxnToODE` to produce
+lambdified right-hand sides and :func:`create_system_rhs` closures for
+SciPy-based integrators and optional numbalsoda acceleration.
+"""
+
 import csv
 
-from sympy import Function, Symbol, symbols, parse_expr, lambdify
+from sympy import Function, Integer, Symbol, symbols, parse_expr, lambdify
 from sympy.core.symbol import Symbol as SympySymbol
 import inspect
 
@@ -14,20 +21,22 @@ from .rxn_reader import RxnToODE
 
 
 def _load_rate_const_overrides_csv(file_path, encoding, allowed_keys):
-    """Load rate constant overrides from a CSV with columns 'k' and 'f(t)'.
+    """Parse a two-column CSV mapping rate names to override expressions.
 
-    Specification:
-    - First row must be header exactly "k" and "f(t)".
-    - Lines starting with # are not allowed (error).
-    - Empty rows (both columns empty) are ignored.
-    - Duplicate k in data rows raises error.
-    - Row with empty f(t) is ignored (that k is not overridden).
-    - k must be in allowed_keys (keys from reaction CSV), else error.
-    - Only .csv path is supported.
+    The header must be exactly ``k`` and ``f(t)``. Rows that start ``#`` in the
+    ``k`` column are rejected. Blank rows and rows with an empty ``f(t)`` cell
+    are ignored (no override for that ``k``). ``k`` must belong to ``allowed_keys``.
+
+    Args:
+        file_path: Must end with ``.csv``.
+        encoding: Text encoding for file IO.
+        allowed_keys: Valid rate names from the reaction input.
 
     Returns:
-        dict: k_name -> expression string. Keys are from data rows;
-              rows with empty f(t) are skipped.
+        Mapping ``name -> expression string`` for overridden constants only.
+
+    Raises:
+        ValueError: Malformed CSV, unknown keys, duplicates, or unsupported path.
     """
     if not file_path.lower().endswith('.csv'):
         raise ValueError(
@@ -126,25 +135,13 @@ def _resolve_rate_consts(rate_consts_dict):
 
 
 class RxnODEbuild(RxnToODE):
-    """Build ODE systems and numerical RHS functions from reaction definitions.
+    """Lambdified RHS builders atop :class:`~rxnfit.rxn_reader.RxnToODE`.
 
-    Extends RxnToODE to produce callable ODE right-hand sides (e.g. for
-    scipy.solve_ivp) and supports rate constants as expressions (e.g. k2=k1*2).
-    Expression-defined constants are resolved to numbers when building
-    create_ode_system(); for fitting, only free symbolic parameters appear
-    in create_ode_system_with_rate_consts().
+    Resolved numeric rates feed :meth:`create_ode_system`; free symbols feed
+    :meth:`create_ode_system_with_rate_consts` for optimizers.
 
-    Attributes:
-        Inherits all attributes from RxnToODE.
-
-    Methods:
-        create_ode_system(): Numerical ODE functions (t, y) with rate
-            constants resolved or embedded.
-        create_ode_system_with_rate_consts(): ODE functions with rate
-            constants as extra arguments (for fitting).
-        get_ode_system(): Full ODE construction tuple for solvers.
-        debug_ode_system(): Detailed debug info.
-        get_ode_info(debug_info=False): Print summary and optional debug.
+    Refer to :class:`~rxnfit.rxn_reader.RxnToODE` for inherited attributes such as
+    ``rate_consts_dict`` and ``function_names``.
     """
 
     def __init__(self, file_path, encoding=None, rate_const_overrides=None,
@@ -260,14 +257,13 @@ class RxnODEbuild(RxnToODE):
         return ode_functions
 
     def get_symbolic_rate_const_keys(self):
-        """Return the list of free parameter names (p0 order) for fitting.
+        """Sorted free-parameter names implied by ``rate_consts_dict``.
 
-        Names are t-excluding symbols from rate_consts_dict (Symbol or
-        free_symbols of expressions), in sorted order. Same order as
-        create_ode_system_with_rate_consts and run_fit(p0=...) expect.
+        Symbols tied to expressions (for example ``k1`` inside ``k2 = 2*k1``)
+        participate, whereas purely numeric literals do not.
 
         Returns:
-            list[str]: Parameter names in order, e.g. ['a', 'km'].
+            Lexicographically ordered strings matching the lambdify argument tail.
         """
         free_param_names = set()
         for key, val in self.rate_consts_dict.items():
@@ -334,6 +330,98 @@ class RxnODEbuild(RxnToODE):
                 ) from e
 
         return ode_functions, symbolic_rate_const_keys
+
+    def get_numbalsoda_sympy_spec(
+        self,
+        rate_const_values=None,
+        symbolic_rate_const_keys=None,
+    ):
+        """Package symbolic RHS data for numbalsoda ``cfunc`` compilation.
+
+        Args:
+            rate_const_values: ``None`` embeds numeric substitutions; supplying a dict
+                together with ``symbolic_rate_const_keys`` builds the augmented
+                lambdify argument list ``(t, *species, *p)``.
+            symbolic_rate_const_keys: Required whenever ``rate_const_values`` is a dict.
+
+        Returns:
+            Mapping with keys ``expr_tuple``, ``lambdify_args``, ``n_state``,
+            ``n_p``, and ``p_order`` (possibly empty).
+
+        Raises:
+            ValueError: When only one of the optional arguments is provided.
+        """
+        n_state = len(self.function_names)
+        exprs = []
+
+        if rate_const_values is None and symbolic_rate_const_keys is None:
+            resolved = _resolve_rate_consts(self.rate_consts_dict)
+            local_dict = dict(self.sympy_symbol_dict)
+            for k, v in self.rate_consts_dict.items():
+                local_dict[k] = resolved.get(k, v)
+            lambdify_args = (self.t,) + tuple(
+                symbols(name) for name in self.function_names
+            )
+            for species_name in self.function_names:
+                if species_name not in self.sys_odes_dict:
+                    exprs.append(Integer(0))
+                    continue
+                rhs_expr = parse_expr(
+                    self.sys_odes_dict[species_name],
+                    local_dict=local_dict,
+                )
+                for func_name in self.function_names:
+                    func_sym = Function(func_name)
+                    rhs_expr = rhs_expr.subs(
+                        func_sym(self.t), symbols(func_name)
+                    )
+                exprs.append(rhs_expr)
+            return {
+                "expr_tuple": tuple(exprs),
+                "lambdify_args": lambdify_args,
+                "n_state": n_state,
+                "n_p": 0,
+                "p_order": (),
+            }
+
+        if rate_const_values is None or symbolic_rate_const_keys is None:
+            raise ValueError(
+                "rate_const_values and symbolic_rate_const_keys must be "
+                "both None (embedded constants) or both provided (fitting dict)."
+            )
+
+        sym_set = set(symbolic_rate_const_keys)
+        p_order = tuple(symbolic_rate_const_keys) + tuple(
+            sorted(k for k in rate_const_values if k not in sym_set)
+        )
+        local_dict = dict(self.sympy_symbol_dict)
+        for k in p_order:
+            local_dict[k] = Symbol(k)
+        lambdify_args = (self.t,) + tuple(
+            symbols(name) for name in self.function_names
+        ) + tuple(Symbol(k) for k in p_order)
+
+        for species_name in self.function_names:
+            if species_name not in self.sys_odes_dict:
+                exprs.append(Integer(0))
+                continue
+            rhs_expr = parse_expr(
+                self.sys_odes_dict[species_name],
+                local_dict=local_dict,
+            )
+            for func_name in self.function_names:
+                func_sym = Function(func_name)
+                rhs_expr = rhs_expr.subs(
+                    func_sym(self.t), symbols(func_name)
+                )
+            exprs.append(rhs_expr)
+        return {
+            "expr_tuple": tuple(exprs),
+            "lambdify_args": lambdify_args,
+            "n_state": n_state,
+            "n_p": len(p_order),
+            "p_order": p_order,
+        }
 
     def get_ode_system(self):
         """Return the full ODE construction for scipy.solve_ivp.
@@ -423,48 +511,68 @@ class RxnODEbuild(RxnToODE):
             print(f"system of ODE: {dbg['ode_expressions']}")
 
 
-def create_system_rhs(ode_functions_dict, function_names,
-                      rate_const_values=None,
-                      symbolic_rate_const_keys=None):
-    """Build the RHS function (t, y) for scipy.solve_ivp.
-
-    Creates a closure over the ODE functions and optional rate constant
-    values. When rate_const_values and symbolic_rate_const_keys are given,
-    the ODE functions are called with (t, y, *rate_consts) in the order
-    of symbolic_rate_const_keys.
+def _attach_numbalsoda_if_eligible(system_rhs, numbalsoda_context):
+    """Try compiling and attaching ``numbalsoda_rhs`` on ``system_rhs``.
 
     Args:
-        ode_functions_dict (dict): Species name -> ODE function (as from
-            create_ode_system or create_ode_system_with_rate_consts).
-        function_names (list): Species names in the same order as y.
-        rate_const_values (dict or callable, optional): Rate constant key -> numeric
-            value, or a callable (t) -> dict of rate constant values for
-            time-dependent rates. Used when ODE functions expect rate constants
-            as args. When callable, it is called with the current time t to
-            get the dict.
-        symbolic_rate_const_keys (list, optional): Order of rate constant
-            keys matching the ODE functions. Required if rate_const_values
-            is provided.
+        system_rhs: Callable produced by :func:`create_system_rhs`.
+        numbalsoda_context: Internal builder metadata consumed by numbalsoda helpers.
+
+    Note:
+        Silently returns when numbalsoda is unavailable or the model is time dependent.
+    """
+    if numbalsoda_context.get("time_dependent"):
+        return
+    builder = numbalsoda_context.get("builder")
+    if builder is None:
+        return
+    try:
+        from .numbalsoda_rhs import compile_numbalsoda_rhs_for_builder
+    except ImportError:
+        return
+    out = compile_numbalsoda_rhs_for_builder(
+        builder,
+        numbalsoda_context.get("rate_const_values"),
+        numbalsoda_context.get("symbolic_rate_const_keys"),
+    )
+    if out is None:
+        return
+    cfunc, n_p = out
+    system_rhs.numbalsoda_rhs = cfunc
+    system_rhs._rxnfit_lsoda_n_p = n_p
+    rcv = numbalsoda_context.get("rate_const_values")
+    srck = numbalsoda_context.get("symbolic_rate_const_keys")
+    if n_p > 0 and isinstance(rcv, dict) and srck is not None:
+        system_rhs._rxnfit_rate_const_dict = rcv
+        system_rhs._rxnfit_symbolic_rate_const_keys = tuple(srck)
+
+
+def create_system_rhs(ode_functions_dict, function_names,
+                      rate_const_values=None,
+                      symbolic_rate_const_keys=None,
+                      *, numbalsoda_context=None):
+    """Closure ``(t, y) -> dy/dt`` consumed by SciPy integrators.
+
+    Optional rate arguments are appended as ``(..., k0, k1, ...)`` following
+    ``symbolic_rate_const_keys``. Callables in ``rate_const_values`` expose
+    time-dependent kinetic parameters.
+
+    Args:
+        ode_functions_dict: Species-to-lambdify mapping from :class:`RxnODEbuild`.
+        function_names: State component order mirrored in ``y``.
+        rate_const_values: Constant dict or ``(t) -> dict``.
+        symbolic_rate_const_keys: Required together with ``rate_const_values``.
+        numbalsoda_context: Optional hooks for JIT RHS attachment.
 
     Returns:
-        callable: system_rhs(t, y) returning a list of d(species)/dt in
-            function_names order.
+        Callable with SciPy signature ``system_rhs(t, y)``.
 
     Raises:
-        RuntimeError: If any ODE function is None or if evaluation fails
-            during integration (fail fast).
+        RuntimeError: Missing lambdified function or RHS evaluation failure.
     """
     # クロージャでパラメータをキャプチャ（solve_ivpは(t, y)シグネチャを要求）
     def system_rhs(t, y):
-        """Compute d(species)/dt for the current (t, y).
-
-        Args:
-            t (float): Current time.
-            y (array-like): Current concentrations in function_names order.
-
-        Returns:
-            list: Derivatives for each species in function_names order.
-        """
+        """Evaluate species derivatives ordered like ``function_names``."""
         rhs_odesys = []
         for species_name in function_names:
             if species_name in ode_functions_dict:
@@ -518,4 +626,6 @@ def create_system_rhs(ode_functions_dict, function_names,
                 rhs_odesys.append(0.0)
         return rhs_odesys
 
+    if numbalsoda_context is not None:
+        _attach_numbalsoda_if_eligible(system_rhs, numbalsoda_context)
     return system_rhs

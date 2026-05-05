@@ -2,10 +2,10 @@
 # Use of this source code is governed by a BSD-3-style
 # license that can be found in the LICENSE file.
 
-"""Compute RSS, TSS, and R² for model vs. experimental data.
+"""Goodness-of-fit metrics (RSS, TSS, R²) shared by solvers and fitters.
 
-TSS uses per-species means over the same valid points used for RSS.
-All functions use the same valid-point definition (NaN excluded).
+Residuals and total sum of squares omit NaN pairs so RSS and TSS always refer
+to the same set of valid (time, species) samples.
 """
 
 import warnings

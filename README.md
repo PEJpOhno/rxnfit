@@ -11,8 +11,8 @@
 **How to cite :** Ohno, M. rxnfit. GitHub. https://github.com/PEJpOhno/rxnfit (2023).  
 
 ## Current version and requirements
-- current version = 0.3.0
-- pyhon >=3.12
+- current version = 0.4.0
+- python >=3.12
 
 [dependencies]
 - NumPy
@@ -33,7 +33,33 @@ Create and activate a Python virtual environment, then
 $pip install rxnfit
 ```
 
-If you want to give it a quick try, just copy or move the example directory from the cloned repo to wherever it's convenient. Then, activate your virtual environment, start Jupyter Notebook, and open one of the sample scripts inside "examples" directry to test it out.
+If you want to give it a quick try, just copy or move the example directory from the cloned repo to wherever it's convenient. Then, activate your virtual environment, start Jupyter Notebook, and open one of the sample scripts inside "examples" directry to test it out.  
+
+**numbalsoda**  
+rxnfit supports the LSODA ODE solver via numbalsoda.
+However, installation of numbalsoda must be performed by the user according to their environment.
+For installation instructions, please refer to the following official pages:
+
+PyPI: https://pypi.org/project/numbalsoda/
+
+conda-forge: https://anaconda.org/conda-forge/numbalsoda 
+
+When using pip, you can also install it as an optional dependency:
+
+```
+$pip install "rxnfit[nlsoda]"
+```
+
+With conda, install `numbalsoda` from conda-forge in the same environment as `rxnfit`. Pip and conda resolve dependencies differently; rxnfit does not pin a “known-good” numbalsoda/numba matrix in `pyproject.toml` or here.
+
+**LSODA / numbalsoda behaviour (summary)**  
+- Only `method="LSODA"` attempts numbalsoda (lazy import). Other methods use `scipy.integrate.solve_ivp` unchanged.  
+- If numbalsoda is missing, the RHS cannot be compiled for numbalsoda, or `lsoda` fails at run time, rxnfit falls back to SciPy `RK45` and emits a **one-time-per-process** `UserWarning` (see keys below).  
+- **Warning keys** (stable identifiers): `lsoda_unavailable` (import / environment), `lsoda_rhs_unsupported` (import OK but no usable `system_rhs.numbalsoda_rhs` / `.address` or compile-time failure before `lsoda`), `lsoda_run_failed` (after `lsoda` returns failure or raises; same English text as `lsoda_unavailable`), `lsoda_time_dependent_coerce` (LSODA requested with time-dependent rates; message explains switch to RK45).  
+- **Time-dependent rates** (`rate_const_values` callable, or any rate expression whose free symbols include `t`): integration uses `solve_ivp` with `RK45` only; numbalsoda is not used. The flag `time_dependent` is set internally by rxnfit.  
+- **When `method="LSODA"` and rates are not time-dependent**, the solution time grid is taken from **`t_eval`**. If `t_eval` is given, **`t_span` is not used to choose the integration interval**; the effective interval is the min/max of `t_eval`. If you omit `t_eval`, use `rxnfit.solver_backend.build_t_eval_when_none_for_lsoda` with the appropriate `LsodaImplicitTEvalMode` before calling `solve_ode` (see `docs/spec_docs/numbalsoda2.md` §5.5). That rule does **not** apply when `time_dependent=True`.  
+- **Parameter vector `p`** for numbalsoda is documented in `rxnfit.lsoda_p_vector.build_lsoda_parameter_vector_p`; typical users do not assemble `p` by hand.  
+- The first numbalsoda-capable scope is the standard time-independent `create_system_rhs` path; exotic RHS shapes may fall back per the spec.
 
 ## Usage
 ### Prepare csv file
@@ -73,7 +99,7 @@ Builds numerical ODE RHS from symbolic system; supports rate-constant overrides 
 
 | item | name | description |
 |------|------|-------------|
-| class | RxnODEbuild | Extends RxnToODE. Builds a callable ODE RHS for scipy.integrate.solve_ivp from reaction CSV. Optional rate_const_overrides (dict or CSV path). Used in examples as the builder for RxnODEsolver and ExpDataFitSci. get_ode_info() prints species list and count so you can set SolverConfig.y0 in the correct order (same as function_names). |
+| class | RxnODEbuild | Extends RxnToODE. Builds a callable ODE RHS from reaction CSV. Optional rate_const_overrides (dict or CSV path). Used in examples as the builder for RxnODEsolver and ExpDataFit. get_ode_info() prints species list and count so you can set SolverConfig.y0 in the correct order (same as function_names). |
 
 ### expdata_reader
 Loads and aligns experimental time-course data.
@@ -83,12 +109,12 @@ Loads and aligns experimental time-course data.
 | function | expdata_read | Reads a list of DataFrames and returns, per dataset, (t_list, C_exp_list) for use in fitting or plotting. |
 | function | get_y0_from_expdata | Returns initial concentrations per dataset in the order of function_names (species order). |
 
-### expdata_fit_sci
+### expdata_fit
 Fits symbolic rate constants to experimental data (scipy.optimize.minimize).
 
 | item | name | description |
 |------|------|-------------|
-| class | ExpDataFitSci | Fits symbolic rate constants to experimental time-course data (multi-dataset). run_fit(p0, ...) runs optimization and returns (result, param_info, fit_metrics); result has .fun (RSS), .tss, .r2; fit_metrics is a dict with keys 'rss', 'tss', 'r2'. plot_fitted_solution(expdata_df, ...) plots fitted time-courses with per-dataset y0 after run_fit. |
+| class | ExpDataFit | Fits symbolic rate constants to experimental time-course data (multi-dataset). Integration is routed through rxnfit solve_ode dispatcher (LSODA tries numbalsoda; unavailable path falls back to RK45). run_fit(p0, ...) returns (result, param_info, fit_metrics); result has .fun (RSS), .tss, .r2; fit_metrics has keys 'rss', 'tss', 'r2'. plot_fitted_solution(expdata_df, ...) plots fitted time-courses with per-dataset y0 after run_fit. |
 
 ### solv_ode
 Numerical integration and plotting of ODE solutions.
@@ -96,14 +122,21 @@ Numerical integration and plotting of ODE solutions.
 | item | name | description |
 |------|------|-------------|
 | class | SolverConfig | Dataclass holding integration settings: y0, t_span, t_eval, method, rtol. Optionally rate_const_values and symbolic_rate_const_keys for time-dependent or variable rate constants. |
-| class | RxnODEsolver | Integrates ODEs with a builder and SolverConfig. solve_system() runs the integration. solution_plot() plots time-courses (optionally with experimental overlay). to_dataframe_list() returns a list of DataFrames (one per dataset). eval_fit_metrics(expdata_df, ...) returns a dict with 'rss', 'tss', 'r2'. |
+| class | RxnODEsolver | Integrates ODEs with a builder and SolverConfig through rxnfit solve_ode dispatcher. For method="LSODA", rxnfit tries numbalsoda and falls back to RK45 when unavailable. For other methods, scipy.solve_ivp is used. solution_plot() plots time-courses (optionally with experimental overlay). to_dataframe_list() returns a list of DataFrames (one per dataset). eval_fit_metrics(expdata_df, ...) returns a dict with 'rss', 'tss', 'r2'. |
 
-### p0_opt_fit
-Optimizes initial parameter values (p0) for rate constants using Optuna, then fits with ExpDataFitSci.
+### solver_backend
+Backend dispatch for ODE integration.
 
 | item | name | description |
 |------|------|-------------|
-| class | P0OptFit | Optimize initial parameter values (p0) for rate constants using Optuna, then run ExpDataFitSci. |
+| function | solve_ode | Unified ODE entry point used by solv_ode and expdata_fit. If method is "LSODA" and the model is time-independent, rxnfit tries numbalsoda on an explicit `t_eval` grid; otherwise see README (warnings, RK45, time-dependent). Keyword `time_dependent` is set by rxnfit callers. |
+
+### p0_opt_fit
+Optimizes initial parameter values (p0) for rate constants using Optuna, then fits with ExpDataFit.
+
+| item | name | description |
+|------|------|-------------|
+| class | P0OptFit | Optimize initial parameter values (p0) for rate constants using Optuna, then run ExpDataFit. |
 
 ## References  
 

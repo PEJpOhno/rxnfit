@@ -120,7 +120,7 @@
 |------|------------------------|----------------|
 | 修正 | rxnfit/build_ode.py | - `RxnODEbuild.__init__` に `rate_const_overrides=None`, `rate_const_overrides_encoding=None` を追加。<br>- override CSV の読み込みを build_ode 内に実装（厳密ヘッダー、空行無視、# エラー、k 重複エラー、未定義 k エラー）。<br>- 読み込み直後に overrides を適用し dict を更新。<br>- 自由パラメータ構築時に t を除外。<br>- `create_system_rhs()` で callable の場合 `rate_const_values(t)` を使用。 |
 | 修正 | rxnfit/solv_ode.py | - SolverConfig に `rate_const_values`, `symbolic_rate_const_keys` を追加。<br>- 両方指定 or 両方省略のみ許可。<br>- solve_system で速度定数つき ODE 経路を追加。<br>- fit_metrics など積分系も同様。 |
-| 修正 | rxnfit/expdata_fit_sci.py | - `k(t)` の有無を自動判別。<br>- run_fit() 後のみ SolverConfig 引数を返す。<br>- 未実行時は指定メッセージでエラー。<br>- 評価器は rate_const_ft_eval を使用。 |
+| 修正 | rxnfit/expdata_fit.py | - `k(t)` の有無を自動判別。<br>- run_fit() 後のみ SolverConfig 引数を返す。<br>- 未実行時は指定メッセージでエラー。<br>- 評価器は rate_const_ft_eval を使用。 |
 | 追加 | rxnfit/rate_const_ft_eval.py | - 新規モジュール。<br>- docstring に「ft = f(t)」。<br>- `(t, params)` → rate dict を返す callable を構築。 |
 | 追加 | （任意）rxnfit/__init__.py | - 必要に応じて公開 API を export。 |
 

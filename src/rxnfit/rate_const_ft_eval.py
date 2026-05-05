@@ -2,11 +2,11 @@
 # Use of this source code is governed by a BSD-3-style
 # license that can be found in the LICENSE file.
 
-"""Rate constant evaluator for time-dependent k(t).
+"""Time-dependent rate constants ``k(t)`` and helpers for evaluation.
 
-"ft" in the module name stands for f(t), i.e. rate constants as functions of time.
-Builds a callable (t, params) -> dict of rate constant values for use in ODE
-integration and fitting when rate constants depend on time t and/or other parameters.
+The ``ft`` suffix denotes ``f(t)``: rate expressions may depend on time and on
+free parameters. Provides :func:`has_time_dependent_rates` and
+:func:`build_evaluator` for SymPy rate tables used by ODE builders and fitters.
 """
 
 from sympy import Symbol
